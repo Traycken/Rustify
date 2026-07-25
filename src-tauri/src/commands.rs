@@ -2,7 +2,7 @@ use crate::models::{AlbumSummary, ArtistSummary, PlayerState, Playlist, ScanRepo
 use crate::player::PlayerCommand;
 use crate::state::AppState;
 use crate::{db, scanner};
-use tauri::State;
+use tauri::{Manager, State};
 use uuid::Uuid;
 
 fn map_err<E: std::fmt::Display>(e: E) -> String {
@@ -475,4 +475,36 @@ pub fn restore_player_track(
     position_secs: f64,
 ) -> Result<(), String> {
     send(&state, PlayerCommand::RestoreTrack(queue, index, position_secs))
+}
+
+#[tauri::command]
+pub fn enable_overlay_mode(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_always_on_top(true);
+        let _ = win.set_decorations(false);
+        let _ = win.set_shadow(false);
+        let _ = win.set_resizable(false);
+        let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 210.0, height: 210.0 }));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn disable_overlay_mode(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_always_on_top(false);
+        let _ = win.set_decorations(true);
+        let _ = win.set_shadow(true);
+        let _ = win.set_resizable(true);
+        let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 1200.0, height: 780.0 }));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_overlay_click_through(app: tauri::AppHandle, ignore: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_ignore_cursor_events(ignore);
+    }
+    Ok(())
 }

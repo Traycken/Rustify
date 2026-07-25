@@ -12,10 +12,6 @@
       rel="stylesheet"
       crossorigin="anonymous"
     />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -390,12 +386,73 @@
             <ul id="device-picker-list" class="device-picker-list"></ul>
           </div>
         </div>
+        <button id="btn-toggle-overlay" class="icon-btn overlay-btn" title="Activer le mode Overlay (Mini-Lecteur Flottant)">
+          <i class="fa-solid fa-window-restore"></i>
+        </button>
         <span class="vol-icon" title="Volume"><i class="fa-solid fa-volume-high"></i></span>
         <div class="volume-bar-track">
           <input id="volume" class="volume-bar" type="range" min="0" max="100" value="80" />
         </div>
       </div>
     </footer>
+
+    <!-- Mini Lecteur Overlay Vinyle Flottant (Circular) -->
+    <div id="overlay-container" class="overlay-container" hidden>
+      <div id="overlay-vinyl-disc" class="overlay-vinyl-disc" data-tauri-drag-region title="Maintenir pour déplacer l'Overlay (Molette pour le volume)">
+        <!-- Masked Vinyl Disc Body (Grooves + Album Cover) -->
+        <div class="overlay-vinyl-body" data-tauri-drag-region>
+          <div id="overlay-vinyl-grooves" class="overlay-vinyl-grooves" data-tauri-drag-region></div>
+          
+          <!-- Center Album Cover Hub -->
+          <div class="overlay-vinyl-center" data-tauri-drag-region>
+            <div id="overlay-cover-box" class="overlay-cover-box" data-tauri-drag-region>
+              <div id="overlay-cover-placeholder" class="cover-placeholder" data-tauri-drag-region><i class="fa-solid fa-compact-disc"></i></div>
+              <img id="overlay-cover-img" class="overlay-cover-img" hidden alt="Cover" data-tauri-drag-region />
+            </div>
+          </div>
+        </div>
+
+        <!-- Central Spindle Hole Rim (unmasked) -->
+        <div class="overlay-spindle-hole" data-tauri-drag-region></div>
+
+        <!-- SVG Circular Progress Ring (outer ring) -->
+        <div id="overlay-progress-ring-box" class="overlay-progress-ring-box" title="Cliquer sur le bord du vinyle pour naviguer dans le morceau">
+          <svg class="overlay-progress-ring" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="46" />
+            <circle id="overlay-ring-fill" class="ring-fill" cx="50" cy="50" r="46" />
+          </svg>
+        </div>
+
+        <!-- Controls HUD overlay directly inside vinyl -->
+        <div class="overlay-hud">
+          <!-- Top Arc Tool Ring (curved around top edge of vinyl) -->
+          <button id="overlay-btn-clickthrough" class="overlay-hud-btn arc-btn-1" title="Clics traversants (Verrou)"><i class="fa-solid fa-lock-open"></i></button>
+          <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-2" title="Volume (Clic / Molette)"><i class="fa-solid fa-volume-high"></i></button>
+          <button id="overlay-btn-fav" class="overlay-hud-btn arc-btn-3" title="Favori"><i class="fa-regular fa-heart"></i></button>
+          <button id="overlay-btn-close" class="overlay-hud-btn arc-btn-4 close" title="Quitter le mode Overlay"><i class="fa-solid fa-xmark"></i></button>
+
+          <!-- Volume Mini Popup / Slider -->
+          <div id="overlay-volume-popover" class="overlay-volume-popover" hidden>
+            <i class="fa-solid fa-volume-low"></i>
+            <input id="overlay-volume-slider" type="range" min="0" max="100" value="80" class="overlay-vol-range" />
+            <i class="fa-solid fa-volume-high"></i>
+          </div>
+
+          <!-- Centered Transport Controls across vinyl middle -->
+          <button id="overlay-btn-shuffle" class="overlay-hud-btn tr-btn-1" title="Lecture aléatoire"><i class="fa-solid fa-shuffle"></i></button>
+          <button id="overlay-btn-prev" class="overlay-hud-btn tr-btn-2" title="Précédent"><i class="fa-solid fa-backward-step"></i></button>
+          <button id="overlay-btn-play" class="overlay-hud-btn tr-btn-play play" title="Lecture / Pause"><i class="fa-solid fa-play"></i></button>
+          <button id="overlay-btn-next" class="overlay-hud-btn tr-btn-4" title="Suivant"><i class="fa-solid fa-forward-step"></i></button>
+          <button id="overlay-btn-repeat" class="overlay-hud-btn tr-btn-5" title="Répéter"><i class="fa-solid fa-repeat"></i></button>
+
+          <!-- Title & Artist info text BELOW controls -->
+          <div class="overlay-hud-info" data-tauri-drag-region>
+            <div id="overlay-title" class="overlay-hud-title" data-tauri-drag-region>Aucune lecture</div>
+            <div id="overlay-artist" class="overlay-hud-artist" data-tauri-drag-region>—</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Menu Contextuel Clic Droit -->
     <div id="context-menu" class="context-menu" hidden>

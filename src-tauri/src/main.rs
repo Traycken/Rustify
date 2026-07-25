@@ -84,6 +84,13 @@ fn handle_shortcut_trigger(app: &AppHandle, shortcut: &Shortcut) {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::AppleScript,
@@ -242,6 +249,9 @@ fn main() {
             commands::save_last_player_state,
             commands::get_last_player_state,
             commands::restore_player_track,
+            commands::enable_overlay_mode,
+            commands::disable_overlay_mode,
+            commands::set_overlay_click_through,
         ])
         .run(tauri::generate_context!())
         .expect("erreur lors de l'exécution de Rustify");
