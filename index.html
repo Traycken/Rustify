@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rustify</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark"><i class="fa-solid fa-compact-disc"></i></span>
+          <span class="brand-name">Rustify</span>
+        </div>
+
+        <button id="btn-import" class="btn-import">
+          <i class="fa-solid fa-folder-plus"></i> Importer un dossier
+        </button>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="tracks">
+            <i class="fa-solid fa-music nav-icon"></i> Bibliothèque
+          </button>
+          <button class="nav-item" data-view="recents">
+            <i class="fa-solid fa-clock-rotate-left nav-icon"></i> Récent
+          </button>
+          <button class="nav-item" data-view="favorites">
+            <i class="fa-solid fa-heart nav-icon"></i> Favoris
+          </button>
+          <button class="nav-item" data-view="albums">
+            <i class="fa-solid fa-compact-disc nav-icon"></i> Albums
+          </button>
+          <button class="nav-item" data-view="artists">
+            <i class="fa-solid fa-user-group nav-icon"></i> Artistes
+          </button>
+          <button class="nav-item" data-view="genres">
+            <i class="fa-solid fa-tags nav-icon"></i> Genres
+          </button>
+          <button class="nav-item" data-view="playlists">
+            <i class="fa-solid fa-list-ul nav-icon"></i> Playlists
+          </button>
+        </nav>
+
+        <div class="playlist-section" id="playlist-section">
+          <div class="playlist-header">
+            <span id="playlist-header-title" class="playlist-header-title" title="Réduire / Agrandir les playlists">
+              <i class="fa-solid fa-chevron-down section-chevron" id="playlist-chevron"></i>
+              Playlists
+            </span>
+            <button id="btn-new-playlist" title="Nouvelle playlist"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <ul id="playlist-list" class="playlist-list"></ul>
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="nav-item nav-settings" data-view="settings" id="nav-settings" title="Paramètres">
+            <i class="fa-solid fa-gear nav-icon"></i> Paramètres
+          </button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="content-header">
+          <div class="header-left">
+            <div class="nav-history-controls">
+              <button id="btn-nav-back" class="nav-history-btn" title="Précédent (Alt + ←)" disabled>
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <button id="btn-nav-forward" class="nav-history-btn" title="Suivant (Alt + →)" disabled>
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+            <h1 id="view-title">Bibliothèque</h1>
+          </div>
+          <input id="search" class="search" type="search" placeholder="Rechercher un titre, artiste, album…" />
+        </header>
+
+        <div id="view-tracks" class="view">
+          <div id="scan-progress" class="scan-progress-banner" hidden>
+            <div class="progress-info">
+              <span class="progress-icon"><i class="fa-solid fa-globe"></i></span>
+              <span id="scan-progress-text">Enrichissement des métadonnées en ligne...</span>
+            </div>
+            <div class="progress-bar-track">
+              <div id="scan-progress-bar" class="progress-bar-fill"></div>
+            </div>
+          </div>
+
+          <div id="artist-header" class="artist-banner" hidden>
+            <div class="artist-avatar-box">
+              <div id="artist-avatar-placeholder" class="cover-placeholder"><i class="fa-solid fa-user"></i></div>
+              <img id="artist-avatar-img" class="artist-avatar-img" hidden alt="Artist Photo" />
+            </div>
+            <div class="artist-banner-info">
+              <div class="artist-badge">Artiste / Groupe</div>
+              <h2 id="artist-banner-name">Nom de l'artiste</h2>
+              <div class="artist-banner-sub"><span id="artist-banner-genre">Genre</span> · <span id="artist-banner-count">0 morceaux</span></div>
+
+              <div id="artist-members-box" class="artist-members-box" hidden>
+                <span class="members-label"><i class="fa-solid fa-users"></i> Membres du groupe :</span>
+                <div id="artist-members-list" class="members-chips"></div>
+              </div>
+
+              <p id="artist-bio-text" class="artist-bio-text" hidden></p>
+            </div>
+          </div>
+
+          <table class="track-table">
+            <thead>
+              <tr>
+                <th class="col-idx">#</th>
+                <th class="col-cover">Pochette</th>
+                <th>Titre</th>
+                <th>Artiste</th>
+                <th>Album</th>
+                <th class="col-time">Durée</th>
+              </tr>
+            </thead>
+            <tbody id="track-tbody"></tbody>
+          </table>
+          <p id="empty-state" class="empty-state" hidden>
+            Aucun morceau. Importez un dossier de musique pour commencer.
+          </p>
+        </div>
+
+        <div id="view-albums" class="view grid-view" hidden></div>
+        <div id="view-artists" class="view artists-page-view" hidden>
+          <div class="artists-section" id="section-solo-artists">
+            <div class="artists-section-header" data-collapse="solo" title="Réduire / Agrandir la section Artistes Solo">
+              <h2 class="artists-section-title">
+                <i class="fa-solid fa-chevron-down section-chevron"></i>
+                <i class="fa-solid fa-user"></i> Artistes Solo
+                <span id="count-solo-artists" class="section-count-badge">0</span>
+              </h2>
+            </div>
+            <div class="artists-section-body">
+              <div id="grid-solo-artists" class="grid-view"></div>
+              <p id="empty-solo-artists" class="empty-state" hidden>Aucun artiste solo.</p>
+            </div>
+          </div>
+
+          <div class="artists-section" id="section-group-artists" style="margin-top: 24px;">
+            <div class="artists-section-header" data-collapse="group" title="Réduire / Agrandir la section Groupes & Bands">
+              <h2 class="artists-section-title">
+                <i class="fa-solid fa-chevron-down section-chevron"></i>
+                <i class="fa-solid fa-users"></i> Groupes & Bands
+                <span id="count-group-artists" class="section-count-badge">0</span>
+              </h2>
+            </div>
+            <div class="artists-section-body">
+              <div id="grid-group-artists" class="grid-view"></div>
+              <p id="empty-group-artists" class="empty-state" hidden>Aucun groupe d'artistes.</p>
+            </div>
+          </div>
+        </div>
+        <div id="view-genres" class="view grid-view" hidden></div>
+        <div id="view-playlists" class="view" hidden></div>
+
+        <div id="view-recents" class="view" hidden>
+          <div class="recents-header">
+            <p class="settings-desc" style="margin-bottom: 12px;">Historique chronologique des morceaux écoutés récemment dans votre bibliothèque.</p>
+            <button id="btn-clear-history" class="btn-secondary" style="margin-bottom: 16px;"><i class="fa-solid fa-trash-can"></i> Effacer l'historique de lecture</button>
+          </div>
+          <table class="track-table">
+            <thead>
+              <tr>
+                <th class="col-idx">#</th>
+                <th class="col-cover">Pochette</th>
+                <th>Titre</th>
+                <th>Artiste</th>
+                <th>Album</th>
+                <th>Écouté le</th>
+                <th class="col-time">Durée</th>
+              </tr>
+            </thead>
+            <tbody id="recents-tbody"></tbody>
+          </table>
+          <p id="empty-recents" class="empty-state" hidden>Aucun historique de lecture récent.</p>
+        </div>
+
+        <div id="view-favorites" class="view" hidden>
+          <div class="artists-section">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Titres Favoris</h2>
+            </div>
+            <table class="track-table">
+              <thead>
+                <tr>
+                  <th class="col-idx">#</th>
+                  <th class="col-cover">Pochette</th>
+                  <th>Titre</th>
+                  <th>Artiste</th>
+                  <th>Album</th>
+                  <th class="col-time">Durée</th>
+                </tr>
+              </thead>
+              <tbody id="fav-tracks-tbody"></tbody>
+            </table>
+            <p id="empty-fav-tracks" class="empty-state" hidden>Aucun titre favori pour le moment.</p>
+          </div>
+
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Albums Favoris</h2>
+            </div>
+            <div id="grid-fav-albums" class="grid-view"></div>
+            <p id="empty-fav-albums" class="empty-state" hidden>Aucun album favori pour le moment.</p>
+          </div>
+
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Artistes & Groupes Favoris</h2>
+            </div>
+            <div id="grid-fav-artists" class="grid-view"></div>
+            <p id="empty-fav-artists" class="empty-state" hidden>Aucun artiste favori pour le moment.</p>
+          </div>
+        </div>
+
+        <div id="view-settings" class="view" hidden>
+          <div class="settings-card">
+            <h3><i class="fa-solid fa-sliders"></i> Métadonnées & Pochettes</h3>
+            <p class="settings-desc">
+              Scannez et complétez automatiquement les pochette et métadonnées manquantes (année, genre) pour votre bibliothèque.
+            </p>
+            <div class="missing-badge-row">
+              <span>Morceaux nécessitant un enrichissement :</span>
+              <strong id="missing-count" class="missing-count-badge">0</strong>
+            </div>
+            <button id="btn-scan-missing" class="btn-primary">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Obtenir les métadonnées manquantes
+            </button>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-user-gear"></i> Photos & Avatars d'Artistes</h3>
+            <p class="settings-desc">
+              Recherchez et mettez à jour les photos de profil HD pour l'ensemble des artistes de votre bibliothèque.
+            </p>
+            <button id="btn-fetch-all-artist-photos" class="btn-primary">
+              <i class="fa-solid fa-image"></i> Récupérer & Mettre à jour les photos d'artistes
+            </button>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-headphones"></i> Périphérique de Sortie Audio</h3>
+            <p class="settings-desc">
+              Sélectionnez le périphérique audio utilisé pour la lecture de vos morceaux.
+            </p>
+            <div class="settings-select-row">
+              <select id="select-audio-device" class="settings-select">
+                <option value="default">Périphérique système par défaut</option>
+              </select>
+              <button id="btn-refresh-audio-devices" class="btn-icon-secondary" title="Actualiser les périphériques">
+                <i class="fa-solid fa-rotate-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-desktop"></i> Démarrage & Zone de notification</h3>
+            <p class="settings-desc">
+              Gérez le comportement au démarrage de Windows et la réduction dans la barre des tâches.
+            </p>
+            <div class="settings-toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Démarrer au lancement de Windows</span>
+                <span class="toggle-subtitle">Lance automatiquement Rustify au démarrage de la session.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-autostart" />
+                <span class="slider round"></span>
+              </label>
+            </div>
+            <div class="settings-toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Réduire dans le System Tray</span>
+                <span class="toggle-subtitle">Masque l'application dans la zone de notification lors de la fermeture.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-minimize-to-tray" />
+                <span class="slider round"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-keyboard"></i> Raccourcis Clavier Globaux</h3>
+            <p class="settings-desc">
+              Ces raccourcis fonctionnent même lorsque Rustify est réduit ou en arrière-plan.
+            </p>
+            <div class="settings-toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Activer les raccourcis globaux</span>
+                <span class="toggle-subtitle">Intercepte les touches multimédias ou combinaisons globales.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-global-shortcuts" />
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div id="shortcuts-config-list" class="shortcuts-config-list">
+              <div class="shortcut-row">
+                <span class="shortcut-label"><i class="fa-solid fa-play"></i> Lecture / Pause</span>
+                <input type="text" id="sc-input-play" class="shortcut-input" placeholder="MediaPlayPause" />
+              </div>
+              <div class="shortcut-row">
+                <span class="shortcut-label"><i class="fa-solid fa-forward-step"></i> Morceau Suivant</span>
+                <input type="text" id="sc-input-next" class="shortcut-input" placeholder="MediaTrackNext" />
+              </div>
+              <div class="shortcut-row">
+                <span class="shortcut-label"><i class="fa-solid fa-backward-step"></i> Morceau Précédent</span>
+                <input type="text" id="sc-input-prev" class="shortcut-input" placeholder="MediaTrackPrevious" />
+              </div>
+              <div class="shortcut-row">
+                <span class="shortcut-label"><i class="fa-solid fa-stop"></i> Arrêter la lecture</span>
+                <input type="text" id="sc-input-stop" class="shortcut-input" placeholder="MediaStop" />
+              </div>
+              <div class="shortcut-actions">
+                <button id="btn-save-shortcuts" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer les raccourcis</button>
+                <button id="btn-reset-shortcuts" class="btn-secondary"><i class="fa-solid fa-rotate-left"></i> Réinitialiser par défaut</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="player-bar">
+      <div class="now-playing">
+        <div id="vinyl" class="vinyl">
+          <div class="vinyl-groove"></div>
+          <div id="vinyl-cover" class="vinyl-cover"></div>
+          <div class="vinyl-spindle"></div>
+        </div>
+        <div class="track-meta">
+          <div class="hifi-badge"><span class="hifi-led"></span> STEREO HI-FI</div>
+          <div id="now-title" class="now-title">Aucune lecture</div>
+          <div id="now-artist" class="now-artist">—</div>
+          <div class="now-actions">
+            <button id="btn-like-now" class="now-action-pill" title="J'aime (+1 Like)"><i class="fa-solid fa-thumbs-up"></i> <span id="now-likes">0</span></button>
+            <button id="btn-dislike-now" class="now-action-pill" title="Je n'aime pas (+1 Dislike)"><i class="fa-solid fa-thumbs-down"></i> <span id="now-dislikes">0</span></button>
+            <button id="btn-fav-now" class="now-action-btn" title="Ajouter aux favoris"><i class="fa-regular fa-heart"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="transport-deck">
+          <div class="transport-buttons">
+            <button id="btn-shuffle" class="icon-btn" title="Lecture aléatoire"><i class="fa-solid fa-shuffle"></i></button>
+            <button id="btn-prev" class="icon-btn" title="Précédent"><i class="fa-solid fa-backward-step"></i></button>
+            <button id="btn-play" class="icon-btn play" title="Lecture / Pause"><i class="fa-solid fa-play"></i></button>
+            <button id="btn-next" class="icon-btn" title="Suivant"><i class="fa-solid fa-forward-step"></i></button>
+            <button id="btn-repeat" class="icon-btn" title="Répéter"><i class="fa-solid fa-repeat"></i></button>
+          </div>
+          <div class="seek-row">
+            <span id="time-current" class="time mono">0:00</span>
+            <div class="seek-bar-track">
+              <input id="seek" class="seek-bar" type="range" min="0" max="100" value="0" step="0.1" />
+            </div>
+            <span id="time-total" class="time mono">0:00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="volume-block">
+        <div class="device-picker-wrapper">
+          <button id="btn-audio-device" class="icon-btn device-btn" title="Périphérique de sortie audio">
+            <i class="fa-solid fa-headphones"></i>
+          </button>
+          <div id="device-picker-popover" class="device-picker-popover" hidden>
+            <div class="device-picker-header">
+              <span><i class="fa-solid fa-sliders"></i> Sortie Audio</span>
+              <button id="btn-popover-refresh" class="popover-refresh-btn" title="Actualiser"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            <ul id="device-picker-list" class="device-picker-list"></ul>
+          </div>
+        </div>
+        <span class="vol-icon" title="Volume"><i class="fa-solid fa-volume-high"></i></span>
+        <div class="volume-bar-track">
+          <input id="volume" class="volume-bar" type="range" min="0" max="100" value="80" />
+        </div>
+      </div>
+    </footer>
+
+    <!-- Menu Contextuel Clic Droit -->
+    <div id="context-menu" class="context-menu" hidden>
+      <div class="menu-item" id="ctx-play"><span class="menu-icon"><i class="fa-solid fa-play"></i></span> Lire maintenant</div>
+      <div class="menu-item" id="ctx-add-queue"><span class="menu-icon"><i class="fa-solid fa-plus"></i></span> Ajouter à la file d'attente</div>
+      <div class="menu-divider" id="ctx-div-1"></div>
+      <div class="menu-item menu-has-submenu" id="ctx-playlist-item">
+        <span class="menu-icon"><i class="fa-solid fa-folder-plus"></i></span> Ajouter à une playlist <span class="arrow"><i class="fa-solid fa-chevron-right"></i></span>
+        <div id="ctx-playlist-submenu" class="submenu"></div>
+      </div>
+      <div class="menu-divider" id="ctx-div-2"></div>
+      <div class="menu-item" id="ctx-filter-artist"><span class="menu-icon"><i class="fa-solid fa-user"></i></span> Titres de cet artiste</div>
+      <div class="menu-item" id="ctx-filter-album"><span class="menu-icon"><i class="fa-solid fa-compact-disc"></i></span> Titres de cet album</div>
+      <div class="menu-divider" id="ctx-div-3"></div>
+      <div class="menu-item" id="ctx-toggle-fav"><span class="menu-icon"><i class="fa-regular fa-heart"></i></span> Basculer Favori (Morceau/Artiste/Album)</div>
+      <div class="menu-item" id="ctx-like"><span class="menu-icon"><i class="fa-solid fa-thumbs-up"></i></span> J'aime (+1 Like)</div>
+      <div class="menu-item" id="ctx-dislike"><span class="menu-icon"><i class="fa-solid fa-thumbs-down"></i></span> Je n'aime pas (+1 Dislike)</div>
+      <div class="menu-divider" id="ctx-div-4"></div>
+      <div class="menu-item" id="ctx-edit-album"><span class="menu-icon"><i class="fa-solid fa-pen-to-square"></i></span> Éditer les métadonnées de l'album</div>
+      <div class="menu-item" id="ctx-edit-artist"><span class="menu-icon"><i class="fa-solid fa-user-pen"></i></span> Éditer la fiche & photo d'artiste</div>
+      <div class="menu-item" id="ctx-fetch-artist-photo"><span class="menu-icon"><i class="fa-solid fa-image"></i></span> Mettre à jour la photo HD d'artiste</div>
+      <div class="menu-item" id="ctx-toggle-artist-type"><span class="menu-icon"><i class="fa-solid fa-arrows-rotate"></i></span> Basculer Solo / Groupe</div>
+      <div class="menu-item" id="ctx-rename-genre"><span class="menu-icon"><i class="fa-solid fa-pen-to-square"></i></span> Renommer le genre</div>
+      <div class="menu-item" id="ctx-rename-playlist"><span class="menu-icon"><i class="fa-solid fa-pen-to-square"></i></span> Renommer la playlist</div>
+      <div class="menu-item" id="ctx-delete-playlist" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer la playlist</div>
+      <div class="menu-item" id="ctx-info"><span class="menu-icon"><i class="fa-solid fa-circle-info"></i></span> Informations & Métadonnées</div>
+    </div>
+
+    <!-- Modale Métadonnées Morceau -->
+    <div id="metadata-modal" class="modal-overlay" hidden>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Informations & Métadonnées</h2>
+          <button id="modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="meta-section">
+            <div class="meta-preview">
+              <div id="meta-cover-box" class="meta-cover-box">
+                <div id="meta-cover-placeholder" class="cover-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+                <img id="meta-cover-img" class="meta-cover-img" hidden alt="Cover" />
+              </div>
+              <button id="btn-fetch-online" class="btn-fetch-online"><i class="fa-solid fa-globe"></i> Obtenir les métadonnées en ligne</button>
+            </div>
+            
+            <div class="meta-form">
+              <div class="form-group">
+                <label for="meta-input-title">Titre</label>
+                <input type="text" id="meta-input-title" />
+              </div>
+              <div class="form-group">
+                <label for="meta-input-artist">Artiste</label>
+                <input type="text" id="meta-input-artist" />
+              </div>
+              <div class="form-group">
+                <label for="meta-input-album">Album</label>
+                <input type="text" id="meta-input-album" />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="meta-input-genre">Genre</label>
+                  <input type="text" id="meta-input-genre" />
+                </div>
+                <div class="form-group">
+                  <label for="meta-input-year">Année</label>
+                  <input type="number" id="meta-input-year" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="meta-input-likes"><i class="fa-solid fa-thumbs-up"></i> Likes (Pas de limite)</label>
+                  <input type="number" id="meta-input-likes" min="0" value="0" />
+                </div>
+                <div class="form-group">
+                  <label for="meta-input-dislikes"><i class="fa-solid fa-thumbs-down"></i> Dislikes (Pas de limite)</label>
+                  <input type="number" id="meta-input-dislikes" min="0" value="0" />
+                </div>
+              </div>
+              <div class="meta-stats-box" style="margin-top: 10px; margin-bottom: 10px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary, #aaa); margin-bottom: 8px; display: block;">
+                  <i class="fa-solid fa-chart-simple"></i> Statistiques d'écoute (&ge; 10s)
+                </label>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 0.85rem;">
+                  <div><span style="color: var(--text-muted, #888);">Sélections :</span> <strong id="meta-stat-manual">0</strong></div>
+                  <div><span style="color: var(--text-muted, #888);">Écoutes :</span> <strong id="meta-stat-plays">0</strong></div>
+                  <div><span style="color: var(--text-muted, #888);">Skips :</span> <strong id="meta-stat-skips">0</strong></div>
+                  <div><span style="color: var(--text-muted, #888);">Écoute moy. :</span> <strong id="meta-stat-avg-time">0s</strong></div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Emplacement du fichier</label>
+                <div id="meta-file-path" class="file-path-text">—</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zone de résultat de la recherche Web -->
+          <div id="online-results-box" class="online-results-box" hidden>
+            <div class="online-header">
+              <span class="online-badge">Résultat de la recherche Web</span>
+              <span id="online-source-name" class="online-source">iTunes Search API</span>
+            </div>
+            <div class="online-details">
+              <div id="online-cover-box" class="online-cover-box">
+                <img id="online-cover-img" class="online-cover-img" alt="Online Cover" />
+              </div>
+              <div class="online-info">
+                <div class="online-row"><strong>Titre :</strong> <span id="online-title">—</span></div>
+                <div class="online-row"><strong>Artiste :</strong> <span id="online-artist">—</span></div>
+                <div class="online-row"><strong>Album :</strong> <span id="online-album">—</span></div>
+                <div class="online-row"><strong>Genre :</strong> <span id="online-genre">—</span></div>
+                <div class="online-row"><strong>Année :</strong> <span id="online-year">—</span></div>
+                <button id="btn-use-online-data" class="btn-use-online"><i class="fa-solid fa-wand-magic-sparkles"></i> Appliquer ces métadonnées web</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="modal-btn-cancel" class="btn-secondary">Annuler</button>
+          <button id="modal-btn-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale Édition d'Album -->
+    <div id="album-modal" class="modal-overlay" hidden>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Éditer l'Album</h2>
+          <button id="album-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="meta-section">
+            <div class="meta-preview">
+              <div id="album-cover-box" class="meta-cover-box">
+                <div id="album-cover-placeholder" class="cover-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+                <img id="album-cover-img" class="meta-cover-img" hidden alt="Cover" />
+              </div>
+              <button id="btn-album-fetch-online" class="btn-fetch-online"><i class="fa-solid fa-globe"></i> Obtenir la pochette & métadonnées en ligne</button>
+            </div>
+
+            <div class="meta-form">
+              <div class="form-group">
+                <label for="album-input-title">Nom de l'album</label>
+                <input type="text" id="album-input-title" />
+              </div>
+              <div class="form-group">
+                <label for="album-input-artist">Artiste de l'album</label>
+                <input type="text" id="album-input-artist" />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="album-input-genre">Genre</label>
+                  <input type="text" id="album-input-genre" />
+                </div>
+                <div class="form-group">
+                  <label for="album-input-year">Année</label>
+                  <input type="number" id="album-input-year" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zone de résultat de la recherche Web Album -->
+          <div id="album-online-results-box" class="online-results-box" hidden>
+            <div class="online-header">
+              <span class="online-badge">Résultat Album Web</span>
+              <span id="album-online-source-name" class="online-source">iTunes Search API</span>
+            </div>
+            <div class="online-details">
+              <div class="online-cover-box">
+                <img id="album-online-cover-img" class="online-cover-img" alt="Online Album Cover" />
+              </div>
+              <div class="online-info">
+                <div class="online-row"><strong>Album :</strong> <span id="album-online-album">—</span></div>
+                <div class="online-row"><strong>Artiste :</strong> <span id="album-online-artist">—</span></div>
+                <div class="online-row"><strong>Genre :</strong> <span id="album-online-genre">—</span></div>
+                <div class="online-row"><strong>Année :</strong> <span id="album-online-year">—</span></div>
+                <button id="btn-use-album-online-data" class="btn-use-online"><i class="fa-solid fa-wand-magic-sparkles"></i> Appliquer ces métadonnées d'album</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="album-modal-cancel" class="btn-secondary">Annuler</button>
+          <button id="album-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer l'album</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale Édition Artiste -->
+    <div id="artist-modal" class="modal-overlay" hidden>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Éditer l'Artiste</h2>
+          <button id="artist-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="meta-section">
+            <div class="meta-preview">
+              <div id="artist-modal-cover-box" class="meta-cover-box">
+                <div id="artist-modal-cover-placeholder" class="cover-placeholder"><i class="fa-solid fa-user"></i></div>
+                <img id="artist-modal-cover-img" class="meta-cover-img" hidden alt="Artist Photo" />
+              </div>
+              <button id="btn-artist-web-photo" class="btn-fetch-online"><i class="fa-solid fa-globe"></i> Chercher photo HD en ligne</button>
+            </div>
+            
+            <div class="meta-form">
+              <div class="form-group">
+                <label for="artist-input-name">Nom de l'Artiste</label>
+                <input type="text" id="artist-input-name" />
+              </div>
+              <div class="form-group">
+                <label for="artist-input-genre">Genre principal</label>
+                <input type="text" id="artist-input-genre" />
+              </div>
+              <div class="form-group">
+                <label for="artist-input-bio">Biographie / Description</label>
+                <textarea id="artist-input-bio" rows="4" style="width: 100%; background: var(--bg-elevated); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 8px; font-family: var(--font-body); resize: vertical;"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="artist-modal-cancel" class="btn-secondary">Annuler</button>
+          <button id="artist-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer l'artiste</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale Édition Genre -->
+    <div id="genre-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-header">
+          <h2>Renommer le Genre</h2>
+          <button id="genre-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="genre-input-name">Nom du Genre</label>
+            <input type="text" id="genre-input-name" />
+          </div>
+          <p class="settings-desc" style="margin-top: 8px;">Ce nom sera mis à jour sur l'ensemble des morceaux associés de votre bibliothèque.</p>
+        </div>
+        <div class="modal-footer">
+          <button id="genre-modal-cancel" class="btn-secondary">Annuler</button>
+          <button id="genre-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
