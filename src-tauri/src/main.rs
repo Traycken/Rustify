@@ -19,6 +19,35 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+pub fn parse_shortcut(s: &str) -> Option<Shortcut> {
+    if s.trim().is_empty() {
+        return None;
+    }
+    if let Ok(sc) = Shortcut::from_str(s) {
+        return Some(sc);
+    }
+    let clean = s.replace(" ", "");
+    if let Ok(sc) = Shortcut::from_str(&clean) {
+        return Some(sc);
+    }
+    let mut parts: Vec<&str> = clean.split('+').collect();
+    if let Some(last) = parts.last_mut() {
+        if last.len() == 1 {
+            let upper = last.to_uppercase();
+            let key_str = format!("Key{}", upper);
+            let mut formatted_parts = parts.clone();
+            formatted_parts.pop();
+            formatted_parts.push(&key_str);
+            let formatted = formatted_parts.join("+").replace("Ctrl", "Control").replace("Win", "Super");
+            if let Ok(sc) = Shortcut::from_str(&formatted) {
+                return Some(sc);
+            }
+        }
+    }
+    let formatted = clean.replace("Ctrl", "Control").replace("Win", "Super");
+    Shortcut::from_str(&formatted).ok()
+}
+
 pub fn update_shortcut_registrations(app: &AppHandle) {
     let _ = app.global_shortcut().unregister_all();
 
@@ -37,12 +66,10 @@ pub fn update_shortcut_registrations(app: &AppHandle) {
     let sc_next = db::get_setting(&conn, "shortcut_next", "MediaTrackNext");
     let sc_prev = db::get_setting(&conn, "shortcut_prev", "MediaTrackPrevious");
     let sc_stop = db::get_setting(&conn, "shortcut_stop", "MediaStop");
+    let sc_overlay = db::get_setting(&conn, "shortcut_overlay", "Alt + O");
 
-    for sc_str in [&sc_play, &sc_next, &sc_prev, &sc_stop] {
-        if sc_str.trim().is_empty() {
-            continue;
-        }
-        if let Ok(sc) = Shortcut::from_str(sc_str) {
+    for sc_str in [&sc_play, &sc_next, &sc_prev, &sc_stop, &sc_overlay] {
+        if let Some(sc) = parse_shortcut(sc_str) {
             let _ = app.global_shortcut().register(sc);
         }
     }
@@ -59,25 +86,35 @@ fn handle_shortcut_trigger(app: &AppHandle, shortcut: &Shortcut) {
     let sc_next = db::get_setting(&conn, "shortcut_next", "MediaTrackNext");
     let sc_prev = db::get_setting(&conn, "shortcut_prev", "MediaTrackPrevious");
     let sc_stop = db::get_setting(&conn, "shortcut_stop", "MediaStop");
-
-    let sc_str = shortcut.into_string();
+    let sc_overlay = db::get_setting(&conn, "shortcut_overlay", "Alt + O");
 
     let is_match = |target: &str| -> bool {
-        sc_str.eq_ignore_ascii_case(target) || (target == "MediaPlayPause" && (sc_str.contains("Play") || sc_str.contains("Space")))
+        if let Some(target_sc) = parse_shortcut(target) {
+            if shortcut == &target_sc {
+                return true;
+            }
+        }
+        let sc_str = shortcut.into_string();
+        let clean_target = target.replace(" ", "");
+        sc_str.eq_ignore_ascii_case(target) || sc_str.eq_ignore_ascii_case(&clean_target)
     };
 
-    if is_match(&sc_play) {
+    if is_match(&sc_overlay) {
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.eval("window.dispatchEvent(new CustomEvent('toggle-overlay-shortcut'))");
+        }
+    } else if is_match(&sc_play) || (sc_play == "MediaPlayPause" && shortcut.into_string().contains("Play")) {
         let is_playing = state.player_status.lock().map(|s| s.is_playing).unwrap_or(false);
         if is_playing {
             let _ = state.player_tx.send(PlayerCommand::Pause);
         } else {
             let _ = state.player_tx.send(PlayerCommand::Resume);
         }
-    } else if is_match(&sc_next) || sc_str.contains("Next") {
+    } else if is_match(&sc_next) {
         let _ = state.player_tx.send(PlayerCommand::Next);
-    } else if is_match(&sc_prev) || sc_str.contains("Prev") {
+    } else if is_match(&sc_prev) {
         let _ = state.player_tx.send(PlayerCommand::Prev);
-    } else if is_match(&sc_stop) || sc_str.contains("Stop") {
+    } else if is_match(&sc_stop) {
         let _ = state.player_tx.send(PlayerCommand::Stop);
     }
 }

@@ -325,6 +325,10 @@
                 <span class="shortcut-label"><i class="fa-solid fa-stop"></i> Arrêter la lecture</span>
                 <input type="text" id="sc-input-stop" class="shortcut-input" placeholder="MediaStop" />
               </div>
+              <div class="shortcut-row">
+                <span class="shortcut-label"><i class="fa-solid fa-window-restore"></i> Mode Overlay (Mini-lecteur)</span>
+                <input type="text" id="sc-input-overlay" class="shortcut-input" placeholder="Alt + O" />
+              </div>
               <div class="shortcut-actions">
                 <button id="btn-save-shortcuts" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer les raccourcis</button>
                 <button id="btn-reset-shortcuts" class="btn-secondary"><i class="fa-solid fa-rotate-left"></i> Réinitialiser par défaut</button>
@@ -386,7 +390,7 @@
             <ul id="device-picker-list" class="device-picker-list"></ul>
           </div>
         </div>
-        <button id="btn-toggle-overlay" class="icon-btn overlay-btn" title="Activer le mode Overlay (Mini-Lecteur Flottant)">
+        <button id="btn-toggle-overlay" class="icon-btn overlay-btn" title="Basculer le mode Overlay (Alt + O)">
           <i class="fa-solid fa-window-restore"></i>
         </button>
         <span class="vol-icon" title="Volume"><i class="fa-solid fa-volume-high"></i></span>
@@ -398,7 +402,7 @@
 
     <!-- Mini Lecteur Overlay Vinyle Flottant (Circular) -->
     <div id="overlay-container" class="overlay-container" hidden>
-      <div id="overlay-vinyl-disc" class="overlay-vinyl-disc" data-tauri-drag-region title="Maintenir pour déplacer l'Overlay (Molette pour le volume)">
+      <div id="overlay-vinyl-disc" class="overlay-vinyl-disc" data-tauri-drag-region>
         <!-- Masked Vinyl Disc Body (Grooves + Album Cover) -->
         <div class="overlay-vinyl-body" data-tauri-drag-region>
           <div id="overlay-vinyl-grooves" class="overlay-vinyl-grooves" data-tauri-drag-region></div>
@@ -416,7 +420,7 @@
         <div class="overlay-spindle-hole" data-tauri-drag-region></div>
 
         <!-- SVG Circular Progress Ring (outer ring) -->
-        <div id="overlay-progress-ring-box" class="overlay-progress-ring-box" title="Cliquer sur le bord du vinyle pour naviguer dans le morceau">
+        <div id="overlay-progress-ring-box" class="overlay-progress-ring-box">
           <svg class="overlay-progress-ring" viewBox="0 0 100 100">
             <circle class="ring-bg" cx="50" cy="50" r="46" />
             <circle id="overlay-ring-fill" class="ring-fill" cx="50" cy="50" r="46" />
@@ -425,9 +429,12 @@
 
         <!-- Controls HUD overlay directly inside vinyl -->
         <div class="overlay-hud">
+          <!-- Time Remaining Pill in Top Gap -->
+          <div id="overlay-time-remaining" class="overlay-time-pill" data-tauri-drag-region>-0:00</div>
+
           <!-- Top Arc Tool Ring (curved around top edge of vinyl) -->
           <button id="overlay-btn-clickthrough" class="overlay-hud-btn arc-btn-1" title="Clics traversants (Verrou)"><i class="fa-solid fa-lock-open"></i></button>
-          <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-2" title="Volume (Clic / Molette)"><i class="fa-solid fa-volume-high"></i></button>
+          <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-2" title="Volume"><i class="fa-solid fa-volume-high"></i></button>
           <button id="overlay-btn-fav" class="overlay-hud-btn arc-btn-3" title="Favori"><i class="fa-regular fa-heart"></i></button>
           <button id="overlay-btn-close" class="overlay-hud-btn arc-btn-4 close" title="Quitter le mode Overlay"><i class="fa-solid fa-xmark"></i></button>
 

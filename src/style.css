@@ -1586,6 +1586,13 @@ input:checked + .slider:before {
   border-color: var(--accent);
 }
 
+.shortcut-input.recording {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  box-shadow: 0 0 8px rgba(232, 163, 61, 0.3);
+  color: var(--text) !important;
+}
+
 .shortcut-actions {
   display: flex;
   align-items: center;
@@ -1896,6 +1903,12 @@ body.overlay-mode .overlay-container {
 /* Middle Transport Buttons Positions (aligned across vinyl center) */
 .tr-btn-1 { top: 50%; left: 18px; transform: translateY(-50%); }
 .tr-btn-2 { top: 50%; left: 52px; transform: translateY(-50%); }
+.tr-btn-1:hover,
+.tr-btn-2:hover,
+.tr-btn-4:hover,
+.tr-btn-5:hover {
+  transform: translateY(-50%) scale(1.12);
+}
 .tr-btn-play {
   top: 50%;
   left: 50%;
@@ -2047,13 +2060,16 @@ body.overlay-mode .overlay-container {
 .overlay-progress-ring {
   width: 100%;
   height: 100%;
-  transform: rotate(-90deg);
+  transform: rotate(-70deg);
 }
 
 .ring-bg {
   fill: none;
   stroke: rgba(255, 255, 255, 0.12);
   stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 257 289;
+  stroke-dashoffset: 0;
   transition: stroke 0.2s ease;
 }
 
@@ -2066,7 +2082,36 @@ body.overlay-mode .overlay-container {
   stroke: var(--accent);
   stroke-width: 5;
   stroke-linecap: round;
-  stroke-dasharray: 289;
-  stroke-dashoffset: 289;
-  transition: stroke-dashoffset 0.25s linear;
+  stroke-dasharray: 257 289;
+  stroke-dashoffset: 257;
+  transition: stroke-dashoffset 0.15s linear;
+}
+
+/* Time Remaining Pill in Top Ring Gap */
+.overlay-time-pill {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(14, 11, 9, 0.92);
+  border: 1px solid rgba(232, 163, 61, 0.4);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1.5px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  z-index: 35;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0.9;
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.overlay-vinyl-disc:hover .overlay-time-pill {
+  opacity: 1;
+  border-color: var(--accent);
 }

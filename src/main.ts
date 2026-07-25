@@ -913,7 +913,13 @@ async function refreshPlayerState() {
   applyPlayerState(state);
 }
 
+let lastPlayerState: PlayerState | null = null;
+let lastPlayerStateTimestamp = 0;
+
 function applyPlayerState(state: PlayerState) {
+  lastPlayerState = state;
+  lastPlayerStateTimestamp = performance.now();
+
   const vinylCover = $("vinyl-cover");
   const nowLikesEl = $("now-likes");
   const nowDislikesEl = $("now-dislikes");
@@ -1038,6 +1044,7 @@ function updateOverlayUI(state: PlayerState) {
   const overlayTitle = $("overlay-title");
   const overlayArtist = $("overlay-artist");
   const overlayRingFill = $("overlay-ring-fill");
+  const overlayTimeRemaining = $("overlay-time-remaining");
   const overlayCoverImg = $<HTMLImageElement>("overlay-cover-img");
   const overlayCoverPlaceholder = $("overlay-cover-placeholder");
   const overlayBtnPlay = $("overlay-btn-play");
@@ -1058,9 +1065,14 @@ function updateOverlayUI(state: PlayerState) {
     const dur = state.current_track.duration_secs || 1;
     const pct = Math.min(100, Math.max(0, (state.position_secs / dur) * 100));
     if (overlayRingFill) {
-      const circumference = 289;
-      const offset = circumference - (circumference * pct) / 100;
+      const maxArc = 257;
+      const offset = maxArc - (maxArc * pct) / 100;
       overlayRingFill.style.strokeDashoffset = String(offset);
+    }
+
+    if (overlayTimeRemaining) {
+      const remSecs = Math.max(0, (state.current_track.duration_secs || 0) - state.position_secs);
+      overlayTimeRemaining.textContent = `-${fmtTime(remSecs)}`;
     }
 
     if (overlayCoverImg && overlayCoverPlaceholder) {
@@ -1091,7 +1103,8 @@ function updateOverlayUI(state: PlayerState) {
     overlayTitle.textContent = "Aucune lecture";
     overlayArtist.textContent = "—";
     overlayCurrentTrackDuration = 0;
-    if (overlayRingFill) overlayRingFill.style.strokeDashoffset = "289";
+    if (overlayRingFill) overlayRingFill.style.strokeDashoffset = "257";
+    if (overlayTimeRemaining) overlayTimeRemaining.textContent = "-0:00";
     if (overlayCoverImg) overlayCoverImg.hidden = true;
     if (overlayCoverPlaceholder) overlayCoverPlaceholder.hidden = false;
     if (overlayBtnFav) overlayBtnFav.innerHTML = '<i class="fa-regular fa-heart"></i>';
@@ -1275,6 +1288,50 @@ function initCollapsibleSections() {
   }
 }
 
+let currentShortcutPlay = "MediaPlayPause";
+let currentShortcutNext = "MediaTrackNext";
+let currentShortcutPrev = "MediaTrackPrevious";
+let currentShortcutStop = "MediaStop";
+let currentShortcutOverlay = "Alt + O";
+
+function matchShortcut(e: KeyboardEvent, shortcutStr: string): boolean {
+  if (!shortcutStr || !shortcutStr.trim()) return false;
+
+  const parts = shortcutStr.split("+").map((p) => p.trim().toLowerCase());
+
+  const hasCtrl = parts.includes("ctrl") || parts.includes("control");
+  const hasAlt = parts.includes("alt");
+  const hasShift = parts.includes("shift");
+  const hasWin = parts.includes("win") || parts.includes("meta");
+
+  if (e.ctrlKey !== hasCtrl) return false;
+  if (e.altKey !== hasAlt) return false;
+  if (e.shiftKey !== hasShift) return false;
+  if (e.metaKey !== hasWin) return false;
+
+  const mainKeyPart = parts.find(
+    (p) => !["ctrl", "control", "alt", "shift", "win", "meta"].includes(p)
+  );
+
+  if (!mainKeyPart) return false;
+
+  const keyLower = (e.key || "").toLowerCase();
+  const codeLower = (e.code || "").toLowerCase();
+
+  if (mainKeyPart === "mediaplaypause" || mainKeyPart === "play") return keyLower === "mediaplaypause" || codeLower === "mediaplaypause" || mainKeyPart === "play";
+  if (mainKeyPart === "mediatracknext" || mainKeyPart === "next") return keyLower === "mediatracknext" || codeLower === "mediatracknext" || mainKeyPart === "next";
+  if (mainKeyPart === "mediatrackprevious" || mainKeyPart === "prev") return keyLower === "mediatrackprevious" || codeLower === "mediatrackprevious" || mainKeyPart === "prev";
+  if (mainKeyPart === "mediastop" || mainKeyPart === "stop") return keyLower === "mediastop" || codeLower === "mediastop" || mainKeyPart === "stop";
+
+  if (mainKeyPart === "space") return keyLower === " " || codeLower === "space";
+  if (mainKeyPart === "up") return keyLower === "arrowup";
+  if (mainKeyPart === "down") return keyLower === "arrowdown";
+  if (mainKeyPart === "left") return keyLower === "arrowleft";
+  if (mainKeyPart === "right") return keyLower === "arrowright";
+
+  return keyLower === mainKeyPart || codeLower === `key${mainKeyPart}` || codeLower === mainKeyPart;
+}
+
 async function loadAppSettings() {
   try {
     const settings = await invoke<Record<string, string>>("get_app_settings");
@@ -1287,15 +1344,23 @@ async function loadAppSettings() {
     const scNext = $<HTMLInputElement>("sc-input-next");
     const scPrev = $<HTMLInputElement>("sc-input-prev");
     const scStop = $<HTMLInputElement>("sc-input-stop");
+    const scOverlay = $<HTMLInputElement>("sc-input-overlay");
 
     if (autostartEl) autostartEl.checked = settings.autostart === "true";
     if (trayEl) trayEl.checked = settings.minimize_to_tray === "true";
     if (shortcutsEl) shortcutsEl.checked = settings.global_shortcuts_enabled === "true";
 
-    if (scPlay) scPlay.value = settings.shortcut_play_pause || "MediaPlayPause";
-    if (scNext) scNext.value = settings.shortcut_next || "MediaTrackNext";
-    if (scPrev) scPrev.value = settings.shortcut_prev || "MediaTrackPrevious";
-    if (scStop) scStop.value = settings.shortcut_stop || "MediaStop";
+    currentShortcutPlay = settings.shortcut_play_pause || "MediaPlayPause";
+    currentShortcutNext = settings.shortcut_next || "MediaTrackNext";
+    currentShortcutPrev = settings.shortcut_prev || "MediaTrackPrevious";
+    currentShortcutStop = settings.shortcut_stop || "MediaStop";
+    currentShortcutOverlay = settings.shortcut_overlay || "Alt + O";
+
+    if (scPlay) scPlay.value = currentShortcutPlay;
+    if (scNext) scNext.value = currentShortcutNext;
+    if (scPrev) scPrev.value = currentShortcutPrev;
+    if (scStop) scStop.value = currentShortcutStop;
+    if (scOverlay) scOverlay.value = currentShortcutOverlay;
 
     const configList = $("shortcuts-config-list");
     if (configList && shortcutsEl) {
@@ -1307,7 +1372,87 @@ async function loadAppSettings() {
   }
 }
 
+function showAlert(msg: string) {
+  try {
+    alert(msg);
+  } catch {
+    console.log("[RUSTIFY NOTIFICATION]", msg);
+  }
+}
+
+function formatKeyName(key: string, code: string): string {
+  if (key === " " || code === "Space") return "Space";
+  if (code.startsWith("Key")) return code.replace("Key", "");
+  if (code.startsWith("Digit")) return code.replace("Digit", "");
+  if (code.startsWith("Numpad")) return "Numpad" + code.replace("Numpad", "");
+  if (key === "Control" || key === "Alt" || key === "Shift" || key === "Meta") return "";
+  if (key === "ArrowUp") return "Up";
+  if (key === "ArrowDown") return "Down";
+  if (key === "ArrowLeft") return "Left";
+  if (key === "ArrowRight") return "Right";
+  if (key === "Escape") return "Escape";
+
+  if (key.length === 1) return key.toUpperCase();
+  return key;
+}
+
+function initShortcutRecorders() {
+  document.querySelectorAll<HTMLInputElement>(".shortcut-input").forEach((input) => {
+    let previousValue = input.value;
+
+    input.addEventListener("focus", () => {
+      previousValue = input.value;
+      input.dataset.placeholder = input.placeholder;
+      input.placeholder = "Appuyez sur vos touches...";
+      input.classList.add("recording");
+    });
+
+    input.addEventListener("blur", () => {
+      input.classList.remove("recording");
+      if (input.dataset.placeholder) {
+        input.placeholder = input.dataset.placeholder;
+      }
+      if (!input.value.trim()) {
+        input.value = previousValue;
+      }
+    });
+
+    input.addEventListener("keydown", (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        input.value = previousValue;
+        input.blur();
+        return;
+      }
+
+      if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        input.value = "";
+        return;
+      }
+
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.metaKey) parts.push("Win");
+
+      const keyName = formatKeyName(e.key, e.code);
+      if (keyName) {
+        parts.push(keyName);
+      }
+
+      if (parts.length > 0) {
+        input.value = parts.join(" + ");
+      }
+    });
+  });
+}
+
 function initSettingsEvents() {
+  initShortcutRecorders();
+
   const autostartEl = $<HTMLInputElement>("setting-autostart");
   const trayEl = $<HTMLInputElement>("setting-minimize-to-tray");
   const shortcutsEl = $<HTMLInputElement>("setting-global-shortcuts");
@@ -1339,27 +1484,43 @@ function initSettingsEvents() {
     const scNext = $<HTMLInputElement>("sc-input-next")?.value.trim() || "MediaTrackNext";
     const scPrev = $<HTMLInputElement>("sc-input-prev")?.value.trim() || "MediaTrackPrevious";
     const scStop = $<HTMLInputElement>("sc-input-stop")?.value.trim() || "MediaStop";
+    const scOverlay = $<HTMLInputElement>("sc-input-overlay")?.value.trim() || "Alt + O";
+
+    currentShortcutPlay = scPlay;
+    currentShortcutNext = scNext;
+    currentShortcutPrev = scPrev;
+    currentShortcutStop = scStop;
+    currentShortcutOverlay = scOverlay;
 
     await invoke("save_app_setting", { key: "shortcut_play_pause", value: scPlay });
     await invoke("save_app_setting", { key: "shortcut_next", value: scNext });
     await invoke("save_app_setting", { key: "shortcut_prev", value: scPrev });
     await invoke("save_app_setting", { key: "shortcut_stop", value: scStop });
+    await invoke("save_app_setting", { key: "shortcut_overlay", value: scOverlay });
 
-    alert("Raccourcis clavier enregistrés avec succès !");
+    showAlert("Raccourcis clavier enregistrés avec succès !");
   });
 
   btnResetSc?.addEventListener("click", async () => {
-    $<HTMLInputElement>("sc-input-play").value = "MediaPlayPause";
-    $<HTMLInputElement>("sc-input-next").value = "MediaTrackNext";
-    $<HTMLInputElement>("sc-input-prev").value = "MediaTrackPrevious";
-    $<HTMLInputElement>("sc-input-stop").value = "MediaStop";
+    if ($<HTMLInputElement>("sc-input-play")) $<HTMLInputElement>("sc-input-play").value = "MediaPlayPause";
+    if ($<HTMLInputElement>("sc-input-next")) $<HTMLInputElement>("sc-input-next").value = "MediaTrackNext";
+    if ($<HTMLInputElement>("sc-input-prev")) $<HTMLInputElement>("sc-input-prev").value = "MediaTrackPrevious";
+    if ($<HTMLInputElement>("sc-input-stop")) $<HTMLInputElement>("sc-input-stop").value = "MediaStop";
+    if ($<HTMLInputElement>("sc-input-overlay")) $<HTMLInputElement>("sc-input-overlay").value = "Alt + O";
+
+    currentShortcutPlay = "MediaPlayPause";
+    currentShortcutNext = "MediaTrackNext";
+    currentShortcutPrev = "MediaTrackPrevious";
+    currentShortcutStop = "MediaStop";
+    currentShortcutOverlay = "Alt + O";
 
     await invoke("save_app_setting", { key: "shortcut_play_pause", value: "MediaPlayPause" });
     await invoke("save_app_setting", { key: "shortcut_next", value: "MediaTrackNext" });
     await invoke("save_app_setting", { key: "shortcut_prev", value: "MediaTrackPrevious" });
     await invoke("save_app_setting", { key: "shortcut_stop", value: "MediaStop" });
+    await invoke("save_app_setting", { key: "shortcut_overlay", value: "Alt + O" });
 
-    alert("Raccourcis clavier réinitialisés aux valeurs par défaut !");
+    showAlert("Raccourcis clavier réinitialisés aux valeurs par défaut !");
   });
 }
 
@@ -1581,15 +1742,6 @@ function bindEvents() {
     refreshPlayerState();
   });
 
-  $("overlay-vinyl-disc")?.addEventListener("wheel", async (e) => {
-    e.preventDefault();
-    const state = await invoke<PlayerState>("get_player_state");
-    const delta = e.deltaY < 0 ? 0.05 : -0.05;
-    const newVol = Math.min(1.0, Math.max(0.0, (state.volume || 0.8) + delta));
-    await invoke("set_volume", { volume: newVol });
-    refreshPlayerState();
-  }, { passive: false });
-
   const handleRingSeek = async (e: MouseEvent) => {
     const vinylDisc = $("overlay-vinyl-disc");
     if (!vinylDisc) return;
@@ -1603,9 +1755,12 @@ function bindEvents() {
     // Restrict interaction strictly to the stroke thickness of the ring (radius ~92px, stroke 84px..100px)
     if (dist < 84 || dist > 100) return;
 
-    let rad = Math.atan2(dy, dx) + Math.PI / 2;
-    if (rad < 0) rad += 2 * Math.PI;
-    const pct = rad / (2 * Math.PI);
+    let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+    if (deg < 0) deg += 360;
+
+    let pct = (deg - 20) / 320;
+    if (pct < 0) pct = 0;
+    if (pct > 1) pct = 1;
 
     const state = await invoke<PlayerState>("get_player_state");
     const dur = state.current_track?.duration_secs || overlayCurrentTrackDuration;
@@ -1622,10 +1777,17 @@ function bindEvents() {
   });
 
   window.addEventListener("keydown", (e) => {
-    if (e.altKey && (e.key === "o" || e.key === "O")) {
-      e.preventDefault();
-      toggleOverlayMode();
+    const isInput = ["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName);
+    if (matchShortcut(e, currentShortcutOverlay)) {
+      if (!isInput || e.altKey || e.ctrlKey) {
+        e.preventDefault();
+        toggleOverlayMode();
+      }
     }
+  });
+
+  window.addEventListener("toggle-overlay-shortcut", () => {
+    toggleOverlayMode();
   });
 
   const overlayContainerEl = $("overlay-container");
@@ -2927,7 +3089,40 @@ async function restoreLastPlayerState() {
 
 let saveStateCounter = 0;
 
+function updateSmoothProgress() {
+  if (!lastPlayerState || !lastPlayerState.is_playing || !lastPlayerState.current_track || isSeeking) return;
+
+  const elapsed = (performance.now() - lastPlayerStateTimestamp) / 1000;
+  const dur = lastPlayerState.current_track.duration_secs || 0;
+  if (dur <= 0) return;
+
+  const currentPos = Math.min(dur, lastPlayerState.position_secs + elapsed);
+
+  if (seekBar) {
+    seekBar.value = String(currentPos);
+    updateSliderTrack(seekBar);
+  }
+  if (timeCurrent) {
+    timeCurrent.textContent = fmtTime(currentPos);
+  }
+
+  const overlayTimeRemaining = $("overlay-time-remaining");
+  if (overlayTimeRemaining) {
+    const remSecs = Math.max(0, dur - currentPos);
+    overlayTimeRemaining.textContent = `-${fmtTime(remSecs)}`;
+  }
+
+  const overlayRingFill = $("overlay-ring-fill");
+  if (overlayRingFill) {
+    const pct = Math.min(100, Math.max(0, (currentPos / dur) * 100));
+    const maxArc = 257;
+    const offset = maxArc - (maxArc * pct) / 100;
+    overlayRingFill.style.strokeDashoffset = String(offset);
+  }
+}
+
 async function pollState() {
+  setInterval(updateSmoothProgress, 100);
   setInterval(async () => {
     try {
       const state = await invoke<PlayerState>("get_player_state");
@@ -2951,6 +3146,7 @@ async function pollState() {
 
 async function init() {
   bindEvents();
+  await loadAppSettings();
   await loadLibrary();
   await loadPlaylists();
   await loadAudioDevices();

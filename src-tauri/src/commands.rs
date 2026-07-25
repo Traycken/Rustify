@@ -324,8 +324,10 @@ pub fn get_app_settings(app: tauri::AppHandle, state: State<AppState>) -> Result
 
 #[tauri::command]
 pub fn save_app_setting(app: tauri::AppHandle, state: State<AppState>, key: String, value: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(map_err)?;
-    db::set_setting(&conn, &key, &value).map_err(map_err)?;
+    {
+        let conn = state.db.lock().map_err(map_err)?;
+        db::set_setting(&conn, &key, &value).map_err(map_err)?;
+    }
 
     if key == "autostart" {
         use tauri_plugin_autostart::ManagerExt;
