@@ -145,6 +145,32 @@ fn read_track(path: &Path) -> anyhow::Result<Track> {
         }
     }
 
+    let parse_bpm = |t: &lofty::tag::Tag| -> Option<f64> {
+        let keys = [
+            lofty::tag::ItemKey::Bpm,
+            lofty::tag::ItemKey::IntegerBpm,
+        ];
+        for key in &keys {
+            if let Some(s) = t.get_string(key) {
+                if let Ok(v) = s.trim().parse::<f64>() {
+                    if v > 0.0 {
+                        return Some(v);
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    let (bpm, bpm_is_official) = match tag {
+        Some(t) => {
+            let b = parse_bpm(t);
+            let is_off = b.is_some();
+            (b, is_off)
+        }
+        None => (None, false),
+    };
+
     Ok(Track {
         id: Uuid::new_v4().to_string(),
         path: path.to_string_lossy().to_string(),
@@ -161,10 +187,29 @@ fn read_track(path: &Path) -> anyhow::Result<Track> {
         likes: 0,
         dislikes: 0,
         is_favorite: false,
+        is_ecstasy: false,
         manual_select_count: 0,
+
         play_count: 0,
         skip_count: 0,
         total_listen_secs: 0.0,
         avg_listen_secs: 0.0,
+        permanent_score: 0.0,
+        temp_score: 0.0,
+        effective_score: 0.0,
+        bpm,
+        bpm_is_official,
+
+        isrc: None,
+        mbid: None,
+        iswc: None,
+        tags: Vec::new(),
+        credits: Vec::new(),
+        lyrics_plain: None,
+        lyrics_synced: None,
+        is_instrumental: None,
+        deezer_id: None,
+        enrichment_attempts: 0,
     })
 }
+

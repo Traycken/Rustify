@@ -1,6 +1,7 @@
 use crate::models::{PlayerState, Track};
 use cpal::traits::{DeviceTrait, HostTrait};
 use kira::{
+    effect::eq_filter::{EqFilterBuilder, EqFilterHandle, EqFilterKind},
     manager::{
         backend::cpal::{CpalBackend, CpalBackendSettings},
         AudioManager, AudioManagerSettings,
@@ -9,11 +10,22 @@ use kira::{
         streaming::{StreamingSoundData, StreamingSoundHandle},
         FromFileError, PlaybackState,
     },
+    track::{TrackBuilder, TrackHandle},
     tween::Tween,
+    Volume,
 };
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Fréquences (Hz) des 10 bandes de l'égaliseur graphique, en octaves ISO
+/// standard (identiques à celles d'un égaliseur graphique classique).
+pub const EQ_BAND_FREQS_HZ: [f64; 10] = [
+    31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
+/// Q fixe par bande : compromis standard pour un rendu "graphique" lisse à 10
+/// bandes (bandes légèrement chevauchantes, sans creux/pics excessifs).
+const EQ_BAND_Q: f64 = 1.4;
 
 /// Structure permettant de suivre la session d'écoute active d'un morceau
 struct ActiveSession {
@@ -36,7 +48,24 @@ pub enum PlayerCommand {
     Prev,
     ToggleRepeat,
     ToggleShuffle,
+    ToggleSmartShuffle,
     SetAudioDevice(String),
+
+    /// Applique un état d'égaliseur (10 bandes + préampli), immédiatement et
+    /// en continu (y compris après un changement de périphérique de sortie).
+    ApplyEq {
+        enabled: bool,
+        preamp_db: f64,
+        gains: Vec<f64>,
+    },
+    /// Réduit la file interne à la seule piste en cours de lecture (aucun
+    /// impact sur le son ni la position). Utilisé par le Smart Shuffle
+    /// (géré côté JS) pour garantir que la fin naturelle du morceau ne
+    /// déclenche jamais un "titre suivant de la liste" (next() séquentiel)
+    /// mais bascule systématiquement sur le relais algorithmique — voir
+    /// Engine::advance_on_finish (has_next devient false) et
+    /// main.ts::applyPlayerState.
+    TrimQueueToCurrent,
 }
 
 pub type SharedStatus = Arc<Mutex<PlayerState>>;
@@ -50,46 +79,95 @@ struct Engine {
     volume: f32,
     repeat: bool,
     shuffle: bool,
+    smart_shuffle_active: bool,
     device_name: Option<String>,
+
     active_session: Option<ActiveSession>,
     db: Arc<Mutex<rusqlite::Connection>>,
+    // Égaliseur graphique 10 bandes : toutes les pistes sont routées vers
+    // cette sous-piste Kira, sur laquelle sont appliqués les 10 filtres EQ
+    // (+ le préampli, via le volume de la piste elle-même).
+    eq_track: TrackHandle,
+    eq_bands: Vec<EqFilterHandle>,
+    eq_enabled: bool,
+    eq_preamp_db: f64,
+    eq_gains: Vec<f64>,
 }
 
-fn create_audio_manager(device_name: Option<&str>) -> anyhow::Result<AudioManager<CpalBackend>> {
-    let host = cpal::default_host();
-    let device = match device_name {
+/// Crée la sous-piste d'égalisation (10 filtres EQ en cascade) sur le
+/// gestionnaire audio donné. À reconstruire à chaque changement de
+/// périphérique de sortie : Kira détruit toutes les sous-pistes lorsqu'un
+/// nouvel `AudioManager` est créé.
+fn build_eq_track(
+    manager: &mut AudioManager<CpalBackend>,
+) -> anyhow::Result<(TrackHandle, Vec<EqFilterHandle>)> {
+    let mut builder = TrackBuilder::new();
+    let mut bands = Vec::with_capacity(EQ_BAND_FREQS_HZ.len());
+    for &freq_hz in EQ_BAND_FREQS_HZ.iter() {
+        let handle = builder.add_effect(EqFilterBuilder::new(EqFilterKind::Bell, freq_hz, 0.0, EQ_BAND_Q));
+        bands.push(handle);
+    }
+    let track = manager.add_sub_track(builder)?;
+    Ok((track, bands))
+}
+
+fn find_output_device(host: &cpal::Host, device_name: Option<&str>) -> Option<cpal::Device> {
+    match device_name {
         Some(name) if !name.trim().is_empty() && name != "default" => {
-            let mut found = None;
             if let Ok(devices) = host.output_devices() {
                 for d in devices {
                     if let Ok(d_name) = d.name() {
                         if d_name == name {
-                            found = Some(d);
-                            break;
+                            return Some(d);
                         }
                     }
                 }
             }
-            found
+            None
         }
         _ => None,
+    }
+}
+
+/// Construit le moteur audio Kira/cpal.
+///
+/// Correctif "hachurage/craquements sous charge CPU" : le tampon audio par
+/// défaut du pilote est parfois trop court, ce qui provoque des sous-charges
+/// (buffer underruns) dès que le CPU est sollicité (scan, chargement de
+/// bibliothèque, etc.). On force un tampon plus généreux (~46ms @44.1kHz)
+/// pour absorber ces pics, avec repli automatique sur la taille par défaut
+/// si le périphérique refuse cette taille fixe.
+fn create_audio_manager(device_name: Option<&str>) -> anyhow::Result<AudioManager<CpalBackend>> {
+    let host = cpal::default_host();
+
+    let build = |buffer_size: cpal::BufferSize| -> anyhow::Result<AudioManager<CpalBackend>> {
+        let device = find_output_device(&host, device_name);
+        let backend_settings = CpalBackendSettings {
+            device,
+            buffer_size,
+        };
+        let settings = AudioManagerSettings {
+            backend_settings,
+            ..Default::default()
+        };
+        Ok(AudioManager::<CpalBackend>::new(settings)?)
     };
 
-    let backend_settings = CpalBackendSettings {
-        device,
-        buffer_size: cpal::BufferSize::Default,
-    };
-    let settings = AudioManagerSettings {
-        backend_settings,
-        ..Default::default()
-    };
-    let manager = AudioManager::<CpalBackend>::new(settings)?;
-    Ok(manager)
+    match build(cpal::BufferSize::Fixed(2048)) {
+        Ok(manager) => Ok(manager),
+        Err(e) => {
+            eprintln!(
+                "Rustify: tampon audio fixe (2048) refusé par le pilote ({e}), repli sur la taille par défaut"
+            );
+            build(cpal::BufferSize::Default)
+        }
+    }
 }
 
 impl Engine {
     fn new(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Result<Self> {
-        let manager = create_audio_manager(None)?;
+        let mut manager = create_audio_manager(None)?;
+        let (eq_track, eq_bands) = build_eq_track(&mut manager)?;
         Ok(Self {
             manager,
             sound_handle: None,
@@ -98,10 +176,43 @@ impl Engine {
             volume: 0.8,
             repeat: false,
             shuffle: false,
+            smart_shuffle_active: false,
             device_name: None,
+
             active_session: None,
             db,
+            eq_track,
+            eq_bands,
+            eq_enabled: true,
+            eq_preamp_db: 0.0,
+            eq_gains: vec![0.0; EQ_BAND_FREQS_HZ.len()],
         })
+    }
+
+    /// Réapplique l'état d'égaliseur actuellement mémorisé (gains + préampli
+    /// + activation) aux handles courants. À appeler après toute
+    /// (re)création de la piste EQ (démarrage, changement de périphérique).
+    fn apply_eq_to_handles(&mut self) {
+        for (i, band) in self.eq_bands.iter_mut().enumerate() {
+            let gain_db = if self.eq_enabled {
+                self.eq_gains.get(i).copied().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            band.set_gain(gain_db, Tween::default());
+        }
+        let preamp_db = if self.eq_enabled { self.eq_preamp_db } else { 0.0 };
+        self.eq_track.set_volume(Volume::Decibels(preamp_db), Tween::default());
+    }
+
+    /// Met à jour l'état de l'égaliseur (appelé depuis `PlayerCommand::ApplyEq`).
+    fn set_eq(&mut self, enabled: bool, preamp_db: f64, gains: Vec<f64>) {
+        self.eq_enabled = enabled;
+        self.eq_preamp_db = preamp_db;
+        if gains.len() == self.eq_gains.len() {
+            self.eq_gains = gains;
+        }
+        self.apply_eq_to_handles();
     }
 
     fn current(&self) -> Option<&Track> {
@@ -156,7 +267,7 @@ impl Engine {
             let _ = old.stop(Tween::default());
         }
 
-        let sound_data = StreamingSoundData::from_file(&track.path)?;
+        let sound_data = StreamingSoundData::from_file(&track.path)?.output_destination(&self.eq_track);
         let mut handle = self.manager.play(sound_data)?;
         let _ = handle.set_volume(self.volume as f64, Tween::default());
         self.sound_handle = Some(handle);
@@ -254,6 +365,14 @@ impl Engine {
             self.next(false)
         } else {
             self.stop();
+            // Fin de file sans suite (pas de repeat/shuffle moteur, ex: file à
+            // 1 morceau du Smart Shuffle) : on vide l'index courant pour que
+            // `current()` renvoie None. Le frontend (Smart Shuffle) détecte
+            // cette absence de piste courante pour enchaîner automatiquement
+            // sur le morceau suivant déjà calculé (voir main.ts::applyPlayerState).
+            // Sans ce reset, current_track restait renseigné (piste arrêtée)
+            // et la relance automatique ne se déclenchait jamais → blocage.
+            self.queue_index = -1;
             Ok(())
         }
     }
@@ -287,6 +406,20 @@ impl Engine {
                 self.manager = new_manager;
                 self.device_name = target_name;
 
+                // Kira détruit les sous-pistes existantes avec l'ancien
+                // AudioManager : on recrée la piste EQ puis on réapplique
+                // l'état d'égalisation courant (gains/préampli/activation).
+                match build_eq_track(&mut self.manager) {
+                    Ok((track, bands)) => {
+                        self.eq_track = track;
+                        self.eq_bands = bands;
+                        self.apply_eq_to_handles();
+                    }
+                    Err(e) => {
+                        eprintln!("Rustify: échec reconstruction de la piste EQ après changement de périphérique: {e}");
+                    }
+                }
+
                 if had_track {
                     let is_manual = saved_session.as_ref().map(|s| s.is_manual_select).unwrap_or(false);
                     if let Ok(()) = self.load_current(is_manual) {
@@ -306,6 +439,19 @@ impl Engine {
                 Ok(())
             }
             Err(e) => Err(e),
+        }
+    }
+
+    /// Réduit la file à la seule piste actuellement en cours de lecture,
+    /// sans toucher au handle audio ni à la position. Après appel,
+    /// `queue.len() == 1` et `queue_index == 0` : à la fin naturelle du
+    /// morceau, `advance_on_finish` ne trouvera plus de "suite séquentielle"
+    /// (has_next = false), ce qui force le passage par l'état "aucune piste
+    /// courante" et laisse la main au Smart Shuffle côté frontend.
+    fn trim_queue_to_current(&mut self) {
+        if let Some(track) = self.current().cloned() {
+            self.queue = vec![track];
+            self.queue_index = 0;
         }
     }
 
@@ -335,6 +481,7 @@ impl Engine {
             queue_index: self.queue_index,
             repeat: self.repeat,
             shuffle: self.shuffle,
+            smart_shuffle_active: self.smart_shuffle_active,
             audio_device: self.device_name.clone(),
         }
     }
@@ -425,7 +572,20 @@ fn apply_command(engine: &mut Engine, cmd: PlayerCommand) -> anyhow::Result<()> 
         PlayerCommand::Prev => engine.prev(false)?,
         PlayerCommand::ToggleRepeat => engine.repeat = !engine.repeat,
         PlayerCommand::ToggleShuffle => engine.shuffle = !engine.shuffle,
+        PlayerCommand::ToggleSmartShuffle => {
+            engine.smart_shuffle_active = !engine.smart_shuffle_active;
+            if engine.smart_shuffle_active {
+                engine.trim_queue_to_current();
+            }
+        }
         PlayerCommand::SetAudioDevice(dev) => engine.set_audio_device(&dev)?,
+        PlayerCommand::ApplyEq {
+            enabled,
+            preamp_db,
+            gains,
+        } => engine.set_eq(enabled, preamp_db, gains),
+        PlayerCommand::TrimQueueToCurrent => engine.trim_queue_to_current(),
     }
     Ok(())
 }
+

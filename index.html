@@ -16,6 +16,9 @@
   </head>
   <body>
     <div id="app">
+      <!-- ================================================================= -->
+      <!-- BARRE LATÉRALE DE NAVIGATION (SIDEBAR)                            -->
+      <!-- ================================================================= -->
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-mark"><i class="fa-solid fa-compact-disc"></i></span>
@@ -34,7 +37,10 @@
             <i class="fa-solid fa-clock-rotate-left nav-icon"></i> Récent
           </button>
           <button class="nav-item" data-view="favorites">
-            <i class="fa-solid fa-heart nav-icon"></i> Favoris
+            <i class="fa-solid fa-star nav-icon" style="color: #f1c40f;"></i> Favoris
+          </button>
+          <button class="nav-item" data-view="ecstasy" id="nav-ecstasy">
+            <i class="fa-solid fa-heart nav-icon" style="color: #ff4757;"></i> Extase
           </button>
           <button class="nav-item" data-view="albums">
             <i class="fa-solid fa-compact-disc nav-icon"></i> Albums
@@ -45,8 +51,20 @@
           <button class="nav-item" data-view="genres">
             <i class="fa-solid fa-tags nav-icon"></i> Genres
           </button>
+          <button class="nav-item" data-view="tempo">
+            <i class="fa-solid fa-gauge-high nav-icon"></i> Tempo
+          </button>
           <button class="nav-item" data-view="playlists">
             <i class="fa-solid fa-list-ul nav-icon"></i> Playlists
+          </button>
+          <button class="nav-item" data-view="queue" id="nav-queue">
+            <i class="fa-solid fa-list-ol nav-icon"></i> File d'attente
+          </button>
+          <button class="nav-item" data-view="radios" id="nav-radios">
+            <i class="fa-solid fa-radio nav-icon"></i> Radios
+          </button>
+          <button class="nav-item" data-view="downloader" id="nav-downloader">
+            <i class="fa-solid fa-cloud-arrow-down nav-icon"></i> Téléchargeur
           </button>
         </nav>
 
@@ -68,6 +86,9 @@
         </div>
       </aside>
 
+      <!-- ================================================================= -->
+      <!-- CONTENU PRINCIPAL (VUES / ONGLETS DE L'APPLICATION)               -->
+      <!-- ================================================================= -->
       <main class="content">
         <header class="content-header">
           <div class="header-left">
@@ -84,17 +105,19 @@
           <input id="search" class="search" type="search" placeholder="Rechercher un titre, artiste, album…" />
         </header>
 
-        <div id="view-tracks" class="view">
-          <div id="scan-progress" class="scan-progress-banner" hidden>
-            <div class="progress-info">
-              <span class="progress-icon"><i class="fa-solid fa-globe"></i></span>
-              <span id="scan-progress-text">Enrichissement des métadonnées en ligne...</span>
-            </div>
-            <div class="progress-bar-track">
-              <div id="scan-progress-bar" class="progress-bar-fill"></div>
-            </div>
+        <!-- Bannière de progression pour les scans et enrichissements -->
+        <div id="scan-progress" class="scan-progress-banner" hidden>
+          <div class="progress-info">
+            <span id="scan-progress-icon" class="progress-icon"><i class="fa-solid fa-globe"></i></span>
+            <span id="scan-progress-text">Enrichissement des métadonnées en ligne...</span>
           </div>
+          <div class="progress-bar-track">
+            <div id="scan-progress-bar" class="progress-bar-fill"></div>
+          </div>
+        </div>
 
+        <!-- ── 1. Onglet Bibliothèque / Morceaux ────────────────────────── -->
+        <div id="view-tracks" class="view">
           <div id="artist-header" class="artist-banner" hidden>
             <div class="artist-avatar-box">
               <div id="artist-avatar-placeholder" class="cover-placeholder"><i class="fa-solid fa-user"></i></div>
@@ -104,12 +127,11 @@
               <div class="artist-badge">Artiste / Groupe</div>
               <h2 id="artist-banner-name">Nom de l'artiste</h2>
               <div class="artist-banner-sub"><span id="artist-banner-genre">Genre</span> · <span id="artist-banner-count">0 morceaux</span></div>
-
+              <div id="artist-banner-extra-row" class="artist-banner-extra-row" hidden></div>
               <div id="artist-members-box" class="artist-members-box" hidden>
                 <span class="members-label"><i class="fa-solid fa-users"></i> Membres du groupe :</span>
                 <div id="artist-members-list" class="members-chips"></div>
               </div>
-
               <p id="artist-bio-text" class="artist-bio-text" hidden></p>
             </div>
           </div>
@@ -122,6 +144,7 @@
                 <th>Titre</th>
                 <th>Artiste</th>
                 <th>Album</th>
+                <th class="col-score" style="width: 140px; text-align: right; padding-right: 12px;">Score</th>
                 <th class="col-time">Durée</th>
               </tr>
             </thead>
@@ -132,7 +155,98 @@
           </p>
         </div>
 
+        <!-- ── 2. Onglet Morceaux Récents ───────────────────────────────── -->
+        <div id="view-recents" class="view" hidden>
+          <div class="recents-header">
+            <p class="settings-desc" style="margin-bottom: 12px;">Historique chronologique des morceaux écoutés récemment dans votre bibliothèque.</p>
+            <button id="btn-clear-history" class="btn-secondary" style="margin-bottom: 16px;"><i class="fa-solid fa-trash-can"></i> Effacer l'historique de lecture</button>
+          </div>
+          <table class="track-table">
+            <thead>
+              <tr>
+                <th class="col-idx">#</th>
+                <th class="col-cover">Pochette</th>
+                <th>Titre</th>
+                <th>Artiste</th>
+                <th>Album</th>
+                <th>Écouté le</th>
+                <th class="col-time">Durée</th>
+              </tr>
+            </thead>
+            <tbody id="recents-tbody"></tbody>
+          </table>
+          <p id="empty-recents" class="empty-state" hidden>Aucun historique de lecture récent.</p>
+        </div>
+
+        <!-- ── 3. Onglet Favoris ⭐ ─────────────────────────────────────── -->
+        <div id="view-favorites" class="view" hidden>
+          <div class="artists-section">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Titres Favoris (Étoiles)</h2>
+            </div>
+            <table class="track-table">
+              <thead>
+                <tr>
+                  <th class="col-idx">#</th>
+                  <th class="col-cover">Pochette</th>
+                  <th>Titre</th>
+                  <th>Artiste</th>
+                  <th>Album</th>
+                  <th class="col-time">Durée</th>
+                </tr>
+              </thead>
+              <tbody id="fav-tracks-tbody"></tbody>
+            </table>
+            <p id="empty-fav-tracks" class="empty-state" hidden>Aucun titre favori ⭐ pour le moment.</p>
+          </div>
+
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Albums Favoris</h2>
+            </div>
+            <div id="grid-fav-albums" class="grid-view"></div>
+            <p id="empty-fav-albums" class="empty-state" hidden>Aucun album favori pour le moment.</p>
+          </div>
+
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Artistes & Groupes Favoris</h2>
+            </div>
+            <div id="grid-fav-artists" class="grid-view"></div>
+            <p id="empty-fav-artists" class="empty-state" hidden>Aucun artiste favori pour le moment.</p>
+          </div>
+        </div>
+
+        <!-- ── 4. Onglet Extase 💖 ─────────────────────────────────────── -->
+        <div id="view-ecstasy" class="view" hidden>
+          <div class="artists-section">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff4757;"></i> Titres en Extase 💖 (Favoris+)</h2>
+            </div>
+            <p class="settings-desc" style="margin-bottom: 16px;">
+              Ces musiques sont vos pépites ultimes qui vous font entrer en transe. Jouées avec rareté en lecture aléatoire, elles interviennent comme une bouffée d'oxygène pour relancer l'écoute lors de plusieurs skips d'affilée.
+            </p>
+            <table class="track-table">
+              <thead>
+                <tr>
+                  <th class="col-idx">#</th>
+                  <th class="col-cover">Pochette</th>
+                  <th>Titre</th>
+                  <th>Artiste</th>
+                  <th>Album</th>
+                  <th class="col-time">Durée</th>
+                </tr>
+              </thead>
+              <tbody id="ecstasy-tracks-tbody"></tbody>
+            </table>
+            <p id="empty-ecstasy-tracks" class="empty-state" hidden>Aucun titre marqué en Extase 💖 pour le moment. Utilisez le cœur sur un morceau pour l'ajouter !</p>
+          </div>
+        </div>
+
+        <!-- ── 5. Onglet Albums ─────────────────────────────────────────── -->
         <div id="view-albums" class="view grid-view" hidden></div>
+
+        <!-- ── 6. Onglet Artistes & Groupes ─────────────────────────────── -->
         <div id="view-artists" class="view artists-page-view" hidden>
           <div class="artists-section" id="section-solo-artists">
             <div class="artists-section-header" data-collapse="solo" title="Réduire / Agrandir la section Artistes Solo">
@@ -162,35 +276,34 @@
             </div>
           </div>
         </div>
-        <div id="view-genres" class="view grid-view" hidden></div>
-        <div id="view-playlists" class="view" hidden></div>
 
-        <div id="view-recents" class="view" hidden>
-          <div class="recents-header">
-            <p class="settings-desc" style="margin-bottom: 12px;">Historique chronologique des morceaux écoutés récemment dans votre bibliothèque.</p>
-            <button id="btn-clear-history" class="btn-secondary" style="margin-bottom: 16px;"><i class="fa-solid fa-trash-can"></i> Effacer l'historique de lecture</button>
+        <!-- ── 7. Onglet Genres ─────────────────────────────────────────── -->
+        <div id="view-genres" class="view grid-view" hidden></div>
+
+        <!-- ── 8. Onglet Tempo / BPM ────────────────────────────────────── -->
+        <div id="view-tempo" class="view" hidden>
+          <div class="recents-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <p class="settings-desc" style="margin-bottom: 0;">Morceaux regroupés par tempo / BPM. L'analyseur audio estime automatiquement le BPM des pistes sans métadonnées officielles.</p>
+            <button id="btn-analyze-all-bpm" class="btn-primary"><i class="fa-solid fa-wave-square"></i> Analyser les BPM manquants</button>
           </div>
-          <table class="track-table">
-            <thead>
-              <tr>
-                <th class="col-idx">#</th>
-                <th class="col-cover">Pochette</th>
-                <th>Titre</th>
-                <th>Artiste</th>
-                <th>Album</th>
-                <th>Écouté le</th>
-                <th class="col-time">Durée</th>
-              </tr>
-            </thead>
-            <tbody id="recents-tbody"></tbody>
-          </table>
-          <p id="empty-recents" class="empty-state" hidden>Aucun historique de lecture récent.</p>
+          <div id="grid-tempo" class="grid-view"></div>
         </div>
 
-        <div id="view-favorites" class="view" hidden>
+        <!-- ── 9. Onglet Playlists ──────────────────────────────────────── -->
+        <div id="view-playlists" class="view" hidden>
+          <div class="recents-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <p class="settings-desc" style="margin-bottom: 0;">Créez et gérez vos listes de lecture personnalisées.</p>
+            <button id="btn-new-playlist-page" class="btn-primary"><i class="fa-solid fa-plus"></i> Nouvelle Playlist</button>
+          </div>
+          <div id="grid-playlists" class="grid-view"></div>
+          <p id="empty-playlists" class="empty-state" hidden>Aucune playlist créée. Cliquez sur "+ Nouvelle Playlist" pour commencer.</p>
+        </div>
+
+        <!-- ── Onglet File d'attente ─────────────────────────────────────── -->
+        <div id="view-queue" class="view" hidden>
           <div class="artists-section">
-            <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Titres Favoris</h2>
+            <div class="artists-section-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h2 class="artists-section-title"><i class="fa-solid fa-compact-disc" style="color: var(--color-accent, #1db954);"></i> Morceau en cours de lecture</h2>
             </div>
             <table class="track-table">
               <thead>
@@ -200,31 +313,193 @@
                   <th>Titre</th>
                   <th>Artiste</th>
                   <th>Album</th>
+                  <th class="col-score" style="width: 140px; text-align: right; padding-right: 12px;">Score</th>
                   <th class="col-time">Durée</th>
                 </tr>
               </thead>
-              <tbody id="fav-tracks-tbody"></tbody>
+              <tbody id="queue-current-tbody"></tbody>
             </table>
-            <p id="empty-fav-tracks" class="empty-state" hidden>Aucun titre favori pour le moment.</p>
+            <p id="empty-queue-current" class="empty-state" hidden>Aucun morceau en cours de lecture.</p>
           </div>
 
           <div class="artists-section" style="margin-top: 28px;">
-            <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Albums Favoris</h2>
+            <div class="artists-section-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h2 class="artists-section-title"><i class="fa-solid fa-list-ol" style="color: var(--color-accent, #1db954);"></i> Titres en file d'attente (<span id="queue-count">0</span>)</h2>
+              <button id="btn-clear-queue" class="btn-import" style="padding: 6px 12px; font-size: 13px;" hidden>
+                <i class="fa-solid fa-trash"></i> Vider la file
+              </button>
             </div>
-            <div id="grid-fav-albums" class="grid-view"></div>
-            <p id="empty-fav-albums" class="empty-state" hidden>Aucun album favori pour le moment.</p>
-          </div>
-
-          <div class="artists-section" style="margin-top: 28px;">
-            <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff6b6b;"></i> Artistes & Groupes Favoris</h2>
-            </div>
-            <div id="grid-fav-artists" class="grid-view"></div>
-            <p id="empty-fav-artists" class="empty-state" hidden>Aucun artiste favori pour le moment.</p>
+            <p class="settings-desc" style="margin-bottom: 16px;">
+              En mode aléatoire (Smart Shuffle), les titres ajoutés dans cette file bénéficient d'un <strong>bonus temporaire de score (+100)</strong> pour passer en priorité.
+            </p>
+            <table class="track-table">
+              <thead>
+                <tr>
+                  <th class="col-idx">#</th>
+                  <th class="col-cover">Pochette</th>
+                  <th>Titre</th>
+                  <th>Artiste</th>
+                  <th>Album</th>
+                  <th class="col-score" style="width: 140px; text-align: right; padding-right: 12px;">Score</th>
+                  <th class="col-time">Durée</th>
+                </tr>
+              </thead>
+              <tbody id="queue-upcoming-tbody"></tbody>
+            </table>
+            <p id="empty-queue-upcoming" class="empty-state" hidden>La file d'attente est vide.</p>
           </div>
         </div>
 
+        <!-- ── 10. Onglet Radios ────────────────────────────────────────── -->
+        <div id="view-radios" class="view" hidden>
+          <div class="recents-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <p class="settings-desc" style="margin-bottom: 0;">Écoutez vos stations radios en direct (audio et flux vidéo streaming). Vérification automatique du statut de disponibilité.</p>
+            <button id="btn-add-radio" class="btn-primary"><i class="fa-solid fa-plus"></i> Ajouter une Radio</button>
+          </div>
+          <div id="grid-radios" class="grid-view"></div>
+          <p id="empty-radios" class="empty-state" hidden>Aucune radio enregistrée. Cliquez sur "+ Ajouter une Radio" pour ajouter une station.</p>
+        </div>
+
+        <!-- ── 11. Onglet Téléchargeur Spotify / YouTube ────────────────── -->
+        <div id="view-downloader" class="view" hidden>
+          <div class="downloader-hero-card">
+            <div class="downloader-hero-title">
+              <i class="fa-solid fa-cloud-arrow-down" style="color: var(--accent); font-size: 2rem;"></i>
+              <div>
+                <h2 style="font-size: 1.35rem; margin-bottom: 4px;">Téléchargeur Spotify & YouTube</h2>
+                <p class="downloader-subtitle">Collez l'URL d'une playlist, d'un album ou d'un morceau Spotify / YouTube pour démarrer le téléchargement.</p>
+              </div>
+            </div>
+
+            <div class="downloader-input-box">
+              <div class="downloader-input-wrapper">
+                <i class="fa-solid fa-link input-icon"></i>
+                <input type="text" id="downloader-url-input" placeholder="https://open.spotify.com/playlist/... ou https://www.youtube.com/watch?v=..." />
+                <button id="btn-paste-download" class="btn-secondary" title="Coller depuis le presse-papier">
+                  <i class="fa-solid fa-paste"></i> Coller
+                </button>
+              </div>
+              <div class="downloader-action-btns">
+                <button id="btn-start-download" class="btn-primary btn-large">
+                  <i class="fa-solid fa-download"></i> Télécharger
+                </button>
+                <button id="btn-cancel-download" class="btn-secondary btn-danger" hidden>
+                  <i class="fa-solid fa-stop"></i> Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="downloader-env-card">
+            <div class="env-card-header">
+              <div class="env-status-title">
+                <i class="fa-solid fa-microchip" style="color: var(--accent);"></i>
+                <h3>Environnement Embarqué (UV, Python, spotDL, yt-dlp, FFmpeg)</h3>
+              </div>
+              <span id="downloader-env-badge" class="env-badge env-badge-checking">Vérification...</span>
+            </div>
+            <p id="downloader-env-details" class="env-details-text">Analyse de l'environnement embarqué...</p>
+            <div class="env-actions">
+              <button id="btn-setup-downloader-env" class="btn-secondary">
+                <i class="fa-solid fa-arrows-rotate"></i> Initialiser / Mettre à jour l'environnement
+              </button>
+              <button id="btn-toggle-downloader-settings" class="btn-secondary">
+                <i class="fa-solid fa-sliders"></i> Options de téléchargement
+              </button>
+            </div>
+          </div>
+
+          <div id="downloader-settings-panel" class="downloader-settings-panel" hidden>
+            <div class="settings-grid">
+              <div class="form-group span-2">
+                <label for="downloader-output-dir"><i class="fa-solid fa-folder-open"></i> Dossier de destination :</label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="text" id="downloader-output-dir" placeholder="Dossier par défaut de la bibliothèque" />
+                  <button id="btn-browse-download-dir" class="btn-secondary"><i class="fa-solid fa-folder-open"></i> Parcourir</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="downloader-browser-select"><i class="fa-solid fa-cookie-bite"></i> Cookies navigateur (yt-dlp) :</label>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <select id="downloader-browser-select" class="custom-select">
+                    <option value="brave" selected>Brave (Recommandé)</option>
+                    <option value="chrome">Chrome</option>
+                    <option value="chromium">Chromium</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="edge">Edge</option>
+                    <option value="opera">Opera</option>
+                    <option value="vivaldi">Vivaldi</option>
+                    <option value="safari">Safari</option>
+                    <option value="librewolf">LibreWolf</option>
+                    <option value="none">Aucun cookie</option>
+                    <option value="custom">Perso (Personnalisé)...</option>
+                  </select>
+                  <input type="text" id="downloader-browser-custom-input" placeholder="Nom du navigateur (ex: waterfox, thorium...)" hidden />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="downloader-threads-input"><i class="fa-solid fa-bolt"></i> Threads parallèles (spotDL) :</label>
+                <input type="number" id="downloader-threads-input" min="1" max="64" value="16" />
+              </div>
+
+              <div class="form-group span-2">
+                <label><i class="fa-solid fa-radio"></i> Sources audio préférées :</label>
+                <div class="checkbox-group-row">
+                  <label class="checkbox-chip"><input type="checkbox" id="src-youtube" value="youtube" checked /> YouTube</label>
+                  <label class="checkbox-chip"><input type="checkbox" id="src-youtube-music" value="youtube-music" checked /> YouTube Music</label>
+                  <label class="checkbox-chip"><input type="checkbox" id="src-soundcloud" value="soundcloud" checked /> SoundCloud</label>
+                </div>
+              </div>
+
+              <div class="form-group span-2">
+                <label for="downloader-extra-yt-dlp"><i class="fa-solid fa-terminal"></i> Arguments supplémentaires yt-dlp :</label>
+                <input type="text" id="downloader-extra-yt-dlp" placeholder="Arguments supplémentaires optionnels yt-dlp" value="" />
+              </div>
+
+              <div class="form-group span-2">
+                <label for="downloader-extra-spotdl"><i class="fa-solid fa-terminal"></i> Arguments supplémentaires spotDL :</label>
+                <input type="text" id="downloader-extra-spotdl" placeholder="--dont-filter-results" />
+              </div>
+
+              <div class="form-group span-2">
+                <label class="checkbox-chip" style="font-weight: 500;">
+                  <input type="checkbox" id="downloader-auto-scan" checked />
+                  Scanner automatiquement la bibliothèque Rustify dès la fin du téléchargement
+                </label>
+              </div>
+            </div>
+
+            <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+              <button id="btn-save-downloader-settings" class="btn-primary">
+                <i class="fa-solid fa-floppy-disk"></i> Enregistrer les options
+              </button>
+            </div>
+          </div>
+
+          <div class="downloader-console-card">
+            <div class="console-card-header">
+              <div class="console-title">
+                <i class="fa-solid fa-terminal" style="color: var(--accent);"></i>
+                <h3>Console de Téléchargement & Output en direct</h3>
+              </div>
+              <div class="console-log-actions" style="display: flex; align-items: center; gap: 8px;">
+                <button id="btn-copy-downloader-logs" class="btn-secondary" title="Copier les logs">
+                  <i class="fa-solid fa-copy"></i> Copier
+                </button>
+                <button id="btn-clear-downloader-logs" class="btn-secondary" title="Effacer les logs">
+                  <i class="fa-solid fa-trash-can"></i> Effacer
+                </button>
+              </div>
+            </div>
+            <div id="downloader-console-log" class="console-log-box">
+              <div class="log-line info">Prêt. Collez une URL Spotify ou YouTube ci-dessus pour lancer le téléchargement.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── 12. Onglet Paramètres ────────────────────────────────────── -->
         <div id="view-settings" class="view" hidden>
           <div class="settings-card">
             <h3><i class="fa-solid fa-sliders"></i> Métadonnées & Pochettes</h3>
@@ -237,6 +512,22 @@
             </div>
             <button id="btn-scan-missing" class="btn-primary">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Obtenir les métadonnées manquantes
+            </button>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-database"></i> Enrichissement Avancé</h3>
+            <p class="settings-desc">
+              Récupère le BPM, l'ISRC, les crédits complets (compositeurs, producteurs...), les
+              sous-genres, les paroles, le statut d'activité des artistes (décès/dissolution) et
+              plus encore, via Deezer, MusicBrainz, LRCLIB et Wikidata.
+            </p>
+            <div class="missing-badge-row">
+              <span>Morceaux éligibles (incomplets, ≤ 3 tentatives) :</span>
+              <strong id="advanced-missing-count" class="missing-count-badge">0</strong>
+            </div>
+            <button id="btn-advanced-enrich" class="btn-primary">
+              <i class="fa-solid fa-globe"></i> Lancer l'enrichissement avancé
             </button>
           </div>
 
@@ -262,6 +553,45 @@
               <button id="btn-refresh-audio-devices" class="btn-icon-secondary" title="Actualiser les périphériques">
                 <i class="fa-solid fa-rotate-right"></i>
               </button>
+            </div>
+          </div>
+
+          <div class="settings-card eq-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-sliders"></i> Égaliseur & Profils Sonores</h3>
+            <p class="settings-desc">
+              Réglez le son par fréquence (graves, médiums, aigus...), créez plusieurs profils, et liez
+              chacun à un périphérique de sortie.
+            </p>
+
+            <div class="settings-toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Activer l'égaliseur</span>
+                <span class="toggle-subtitle">Désactive tous les réglages ci-dessous sans les perdre.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="eq-enabled-toggle" checked />
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="eq-profile-row">
+              <select id="eq-profile-select" class="settings-select"></select>
+              <button id="btn-eq-new-profile" class="btn-icon-secondary" title="Nouveau profil"><i class="fa-solid fa-plus"></i></button>
+              <button id="btn-eq-rename-profile" class="btn-icon-secondary" title="Renommer le profil"><i class="fa-solid fa-pen"></i></button>
+              <button id="btn-eq-delete-profile" class="btn-icon-secondary" title="Supprimer le profil"><i class="fa-solid fa-trash"></i></button>
+            </div>
+
+            <div class="eq-device-bind-row">
+              <span class="eq-bind-label"><i class="fa-solid fa-link"></i> Lier ce profil au périphérique :</span>
+              <select id="eq-device-bind-select" class="settings-select">
+                <option value="">Aucun (non lié)</option>
+              </select>
+            </div>
+
+            <div class="eq-bands-row" id="eq-bands-row"></div>
+
+            <div class="eq-actions-row">
+              <button id="btn-eq-reset" class="btn-secondary"><i class="fa-solid fa-rotate-left"></i> Réinitialiser (plat)</button>
             </div>
           </div>
 
@@ -326,7 +656,7 @@
                 <input type="text" id="sc-input-stop" class="shortcut-input" placeholder="MediaStop" />
               </div>
               <div class="shortcut-row">
-                <span class="shortcut-label"><i class="fa-solid fa-window-restore"></i> Mode Overlay (Mini-lecteur)</span>
+                <span class="shortcut-label"><i class="fa-solid fa-window-restore"></i> Ouvrir l'Overlay (Mini-lecteur)</span>
                 <input type="text" id="sc-input-overlay" class="shortcut-input" placeholder="Alt + O" />
               </div>
               <div class="shortcut-actions">
@@ -335,10 +665,45 @@
               </div>
             </div>
           </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-solid fa-bug"></i> Journal &amp; Debug</h3>
+            <p class="settings-desc">
+              Historique des erreurs survenues côté application (Rust / backend) et côté interface (JavaScript / frontend).
+            </p>
+
+            <div class="debug-log-section">
+              <div class="debug-log-header">
+                <span><i class="fa-solid fa-server"></i> Erreurs Backend</span>
+                <div class="debug-log-actions">
+                  <button id="btn-copy-backend-log" class="btn-secondary" title="Copier le journal backend"><i class="fa-solid fa-copy"></i> Copier</button>
+                  <button id="btn-refresh-backend-log" class="btn-icon-secondary" title="Actualiser"><i class="fa-solid fa-rotate-right"></i></button>
+                  <button id="btn-clear-backend-log" class="btn-secondary">Effacer</button>
+                </div>
+              </div>
+              <div id="backend-log-list" class="debug-log-list"></div>
+              <p id="empty-backend-log" class="empty-state" hidden>Aucune erreur backend enregistrée.</p>
+            </div>
+
+            <div class="debug-log-section" style="margin-top: 20px;">
+              <div class="debug-log-header">
+                <span><i class="fa-solid fa-window-maximize"></i> Erreurs Frontend</span>
+                <div class="debug-log-actions">
+                  <button id="btn-copy-frontend-log" class="btn-secondary" title="Copier le journal frontend"><i class="fa-solid fa-copy"></i> Copier</button>
+                  <button id="btn-clear-frontend-log" class="btn-secondary">Effacer</button>
+                </div>
+              </div>
+              <div id="frontend-log-list" class="debug-log-list"></div>
+              <p id="empty-frontend-log" class="empty-state" hidden>Aucune erreur frontend enregistrée.</p>
+            </div>
+          </div>
         </div>
       </main>
     </div>
 
+    <!-- ================================================================= -->
+    <!-- BARRE DE LECTURE PRINCIPALE (PLAYER BAR)                          -->
+    <!-- ================================================================= -->
     <footer class="player-bar">
       <div class="now-playing">
         <div id="vinyl" class="vinyl">
@@ -353,7 +718,8 @@
           <div class="now-actions">
             <button id="btn-like-now" class="now-action-pill" title="J'aime (+1 Like)"><i class="fa-solid fa-thumbs-up"></i> <span id="now-likes">0</span></button>
             <button id="btn-dislike-now" class="now-action-pill" title="Je n'aime pas (+1 Dislike)"><i class="fa-solid fa-thumbs-down"></i> <span id="now-dislikes">0</span></button>
-            <button id="btn-fav-now" class="now-action-btn" title="Ajouter aux favoris"><i class="fa-regular fa-heart"></i></button>
+            <button id="btn-fav-now" class="now-action-btn" title="Favori ⭐"><i class="fa-solid fa-star"></i></button>
+            <button id="btn-ecstasy-now" class="now-action-btn" title="Extase 💖"><i class="fa-solid fa-heart" style="color: #ff4757;"></i></button>
           </div>
         </div>
       </div>
@@ -361,18 +727,35 @@
       <div class="transport">
         <div class="transport-deck">
           <div class="transport-buttons">
-            <button id="btn-shuffle" class="icon-btn" title="Lecture aléatoire"><i class="fa-solid fa-shuffle"></i></button>
-            <button id="btn-prev" class="icon-btn" title="Précédent"><i class="fa-solid fa-backward-step"></i></button>
-            <button id="btn-play" class="icon-btn play" title="Lecture / Pause"><i class="fa-solid fa-play"></i></button>
-            <button id="btn-next" class="icon-btn" title="Suivant"><i class="fa-solid fa-forward-step"></i></button>
-            <button id="btn-repeat" class="icon-btn" title="Répéter"><i class="fa-solid fa-repeat"></i></button>
+            <div class="algo-buttons-slot">
+              <button id="btn-algo-dislike" class="icon-btn algo-btn algo-dislike" title="❌ Mauvaise proposition — l'IA s'adapte" hidden>
+                <i class="fa-solid fa-thumbs-down"></i>
+              </button>
+              <button id="btn-algo-like" class="icon-btn algo-btn algo-like" title="✅ Parfaite proposition ! — l'IA s'adapte" hidden>
+                <i class="fa-solid fa-thumbs-up"></i>
+              </button>
+            </div>
+            <div class="main-transport-controls">
+              <button id="btn-shuffle" class="icon-btn" title="Mode Aléatoire Intelligent">
+                <i class="fa-solid fa-shuffle"></i>
+              </button>
+              <button id="btn-prev" class="icon-btn" title="Précédent"><i class="fa-solid fa-backward-step"></i></button>
+              <button id="btn-play" class="icon-btn play" title="Lecture / Pause"><i class="fa-solid fa-play"></i></button>
+              <button id="btn-next" class="icon-btn" title="Suivant"><i class="fa-solid fa-forward-step"></i></button>
+              <button id="btn-repeat" class="icon-btn" title="Répéter"><i class="fa-solid fa-repeat"></i></button>
+            </div>
           </div>
+
           <div class="seek-row">
             <span id="time-current" class="time mono">0:00</span>
             <div class="seek-bar-track">
               <input id="seek" class="seek-bar" type="range" min="0" max="100" value="0" step="0.1" />
             </div>
             <span id="time-total" class="time mono">0:00</span>
+          </div>
+          <div id="smart-next-indicator" class="smart-next-indicator" hidden>
+            <i class="fa-solid fa-shuffle"></i>
+            <span id="smart-next-label">—</span>
           </div>
         </div>
       </div>
@@ -390,8 +773,8 @@
             <ul id="device-picker-list" class="device-picker-list"></ul>
           </div>
         </div>
-        <button id="btn-toggle-overlay" class="icon-btn overlay-btn" title="Basculer le mode Overlay (Alt + O)">
-          <i class="fa-solid fa-window-restore"></i>
+        <button id="btn-toggle-overlay" class="icon-btn overlay-btn" title="Ouvrir Overlay (Alt + O)">
+          <i class="fa-solid fa-up-right-from-square"></i>
         </button>
         <span class="vol-icon" title="Volume"><i class="fa-solid fa-volume-high"></i></span>
         <div class="volume-bar-track">
@@ -400,14 +783,13 @@
       </div>
     </footer>
 
-    <!-- Mini Lecteur Overlay Vinyle Flottant (Circular) -->
+    <!-- ================================================================= -->
+    <!-- OVERLAY MINI-LECTEUR VINYLE FLOTTANT (CIRCULAR)                   -->
+    <!-- ================================================================= -->
     <div id="overlay-container" class="overlay-container" hidden>
       <div id="overlay-vinyl-disc" class="overlay-vinyl-disc" data-tauri-drag-region>
-        <!-- Masked Vinyl Disc Body (Grooves + Album Cover) -->
         <div class="overlay-vinyl-body" data-tauri-drag-region>
           <div id="overlay-vinyl-grooves" class="overlay-vinyl-grooves" data-tauri-drag-region></div>
-          
-          <!-- Center Album Cover Hub -->
           <div class="overlay-vinyl-center" data-tauri-drag-region>
             <div id="overlay-cover-box" class="overlay-cover-box" data-tauri-drag-region>
               <div id="overlay-cover-placeholder" class="cover-placeholder" data-tauri-drag-region><i class="fa-solid fa-compact-disc"></i></div>
@@ -416,10 +798,8 @@
           </div>
         </div>
 
-        <!-- Central Spindle Hole Rim (unmasked) -->
         <div class="overlay-spindle-hole" data-tauri-drag-region></div>
 
-        <!-- SVG Circular Progress Ring (outer ring) -->
         <div id="overlay-progress-ring-box" class="overlay-progress-ring-box">
           <svg class="overlay-progress-ring" viewBox="0 0 100 100">
             <circle class="ring-bg" cx="50" cy="50" r="46" />
@@ -427,32 +807,26 @@
           </svg>
         </div>
 
-        <!-- Controls HUD overlay directly inside vinyl -->
         <div class="overlay-hud">
-          <!-- Time Remaining Pill in Top Gap -->
           <div id="overlay-time-remaining" class="overlay-time-pill" data-tauri-drag-region>-0:00</div>
 
-          <!-- Top Arc Tool Ring (curved around top edge of vinyl) -->
           <button id="overlay-btn-clickthrough" class="overlay-hud-btn arc-btn-1" title="Clics traversants (Verrou)"><i class="fa-solid fa-lock-open"></i></button>
           <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-2" title="Volume"><i class="fa-solid fa-volume-high"></i></button>
           <button id="overlay-btn-fav" class="overlay-hud-btn arc-btn-3" title="Favori"><i class="fa-regular fa-heart"></i></button>
-          <button id="overlay-btn-close" class="overlay-hud-btn arc-btn-4 close" title="Quitter le mode Overlay"><i class="fa-solid fa-xmark"></i></button>
+          <button id="overlay-btn-close" class="overlay-hud-btn arc-btn-4 close" title="Fermer l'Overlay"><i class="fa-solid fa-xmark"></i></button>
 
-          <!-- Volume Mini Popup / Slider -->
           <div id="overlay-volume-popover" class="overlay-volume-popover" hidden>
             <i class="fa-solid fa-volume-low"></i>
             <input id="overlay-volume-slider" type="range" min="0" max="100" value="80" class="overlay-vol-range" />
             <i class="fa-solid fa-volume-high"></i>
           </div>
 
-          <!-- Centered Transport Controls across vinyl middle -->
           <button id="overlay-btn-shuffle" class="overlay-hud-btn tr-btn-1" title="Lecture aléatoire"><i class="fa-solid fa-shuffle"></i></button>
           <button id="overlay-btn-prev" class="overlay-hud-btn tr-btn-2" title="Précédent"><i class="fa-solid fa-backward-step"></i></button>
           <button id="overlay-btn-play" class="overlay-hud-btn tr-btn-play play" title="Lecture / Pause"><i class="fa-solid fa-play"></i></button>
           <button id="overlay-btn-next" class="overlay-hud-btn tr-btn-4" title="Suivant"><i class="fa-solid fa-forward-step"></i></button>
           <button id="overlay-btn-repeat" class="overlay-hud-btn tr-btn-5" title="Répéter"><i class="fa-solid fa-repeat"></i></button>
 
-          <!-- Title & Artist info text BELOW controls -->
           <div class="overlay-hud-info" data-tauri-drag-region>
             <div id="overlay-title" class="overlay-hud-title" data-tauri-drag-region>Aucune lecture</div>
             <div id="overlay-artist" class="overlay-hud-artist" data-tauri-drag-region>—</div>
@@ -461,7 +835,9 @@
       </div>
     </div>
 
-    <!-- Menu Contextuel Clic Droit -->
+    <!-- ================================================================= -->
+    <!-- MENU CONTEXTUEL CLIC DROIT                                        -->
+    <!-- ================================================================= -->
     <div id="context-menu" class="context-menu" hidden>
       <div class="menu-item" id="ctx-play"><span class="menu-icon"><i class="fa-solid fa-play"></i></span> Lire maintenant</div>
       <div class="menu-item" id="ctx-add-queue"><span class="menu-icon"><i class="fa-solid fa-plus"></i></span> Ajouter à la file d'attente</div>
@@ -473,8 +849,10 @@
       <div class="menu-divider" id="ctx-div-2"></div>
       <div class="menu-item" id="ctx-filter-artist"><span class="menu-icon"><i class="fa-solid fa-user"></i></span> Titres de cet artiste</div>
       <div class="menu-item" id="ctx-filter-album"><span class="menu-icon"><i class="fa-solid fa-compact-disc"></i></span> Titres de cet album</div>
+      <div class="menu-item" id="ctx-filter-similar"><span class="menu-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span> Titres similaires</div>
       <div class="menu-divider" id="ctx-div-3"></div>
-      <div class="menu-item" id="ctx-toggle-fav"><span class="menu-icon"><i class="fa-regular fa-heart"></i></span> Basculer Favori (Morceau/Artiste/Album)</div>
+      <div class="menu-item" id="ctx-toggle-fav"><span class="menu-icon"><i class="fa-solid fa-star" style="color: #f1c40f;"></i></span> Basculer Favori ⭐</div>
+      <div class="menu-item" id="ctx-toggle-ecstasy"><span class="menu-icon"><i class="fa-solid fa-heart" style="color: #ff4757;"></i></span> Basculer Extase 💖</div>
       <div class="menu-item" id="ctx-like"><span class="menu-icon"><i class="fa-solid fa-thumbs-up"></i></span> J'aime (+1 Like)</div>
       <div class="menu-item" id="ctx-dislike"><span class="menu-icon"><i class="fa-solid fa-thumbs-down"></i></span> Je n'aime pas (+1 Dislike)</div>
       <div class="menu-divider" id="ctx-div-4"></div>
@@ -487,6 +865,10 @@
       <div class="menu-item" id="ctx-delete-playlist" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer la playlist</div>
       <div class="menu-item" id="ctx-info"><span class="menu-icon"><i class="fa-solid fa-circle-info"></i></span> Informations & Métadonnées</div>
     </div>
+
+    <!-- ================================================================= -->
+    <!-- MODALES DE L'APPLICATION                                          -->
+    <!-- ================================================================= -->
 
     <!-- Modale Métadonnées Morceau -->
     <div id="metadata-modal" class="modal-overlay" hidden>
@@ -556,11 +938,12 @@
             </div>
           </div>
 
-          <!-- Zone de résultat de la recherche Web -->
+          <div id="meta-advanced-box" class="meta-advanced-box" hidden></div>
+
           <div id="online-results-box" class="online-results-box" hidden>
             <div class="online-header">
               <span class="online-badge">Résultat de la recherche Web</span>
-              <span id="online-source-name" class="online-source">iTunes Search API</span>
+              <span id="online-source-name" class="online-source">—</span>
             </div>
             <div class="online-details">
               <div id="online-cover-box" class="online-cover-box">
@@ -624,11 +1007,10 @@
             </div>
           </div>
 
-          <!-- Zone de résultat de la recherche Web Album -->
           <div id="album-online-results-box" class="online-results-box" hidden>
             <div class="online-header">
               <span class="online-badge">Résultat Album Web</span>
-              <span id="album-online-source-name" class="online-source">iTunes Search API</span>
+              <span id="album-online-source-name" class="online-source">—</span>
             </div>
             <div class="online-details">
               <div class="online-cover-box">
@@ -709,6 +1091,79 @@
         <div class="modal-footer">
           <button id="genre-modal-cancel" class="btn-secondary">Annuler</button>
           <button id="genre-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale Édition / Ajout Radio -->
+    <div id="radio-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 520px;">
+        <div class="modal-header">
+          <h2 id="radio-modal-title">Ajouter une Radio</h2>
+          <button id="radio-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="radio-input-id" />
+          <div class="form-group" style="align-items: center; text-align: center; margin-bottom: 16px;">
+            <label>Photo de Profil / Logo de la Station</label>
+            <div style="position: relative; width: 100px; height: 100px; margin: 10px auto; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;">
+              <img id="radio-input-cover-preview" style="width: 100%; height: 100%; object-fit: cover;" hidden alt="Logo radio" />
+              <div id="radio-input-cover-placeholder" style="font-size: 2rem; color: var(--text-secondary);"><i class="fa-solid fa-radio"></i></div>
+            </div>
+            <input type="file" id="radio-input-cover-file" accept="image/*" hidden />
+            <div style="display: flex; gap: 8px; width: 100%; max-width: 380px; margin: 0 auto;">
+              <button type="button" id="btn-select-radio-cover" class="btn-secondary btn-small" style="white-space: nowrap;"><i class="fa-solid fa-image"></i> Fichier PC</button>
+              <input type="text" id="radio-input-cover-url" placeholder="ou collez l'URL de l'image (https://...)" style="font-size: 12px; flex: 1;" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="radio-input-name">Nom de la station *</label>
+            <input type="text" id="radio-input-name" placeholder="ex: FIP Rock, NRJ, Radio Nova..." />
+          </div>
+          <div class="form-group">
+            <label for="radio-input-url">Lien streaming Audio ou Vidéo (URL) *</label>
+            <input type="text" id="radio-input-url" placeholder="https://stream.radio.com/live.mp3 ou URL YouTube live" />
+          </div>
+          <div class="form-group-row" style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="radio-input-genre">Genre / Style</label>
+              <input type="text" id="radio-input-genre" placeholder="Rock, Jazz, Pop, News..." />
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="radio-input-country">Pays / Description</label>
+              <input type="text" id="radio-input-country" placeholder="France, International..." />
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="checkbox-chip">
+              <input type="checkbox" id="radio-input-is-video" />
+              Il s'agit d'un flux vidéo (Rustify extraira uniquement le son en direct)
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="radio-modal-cancel" class="btn-secondary">Annuler</button>
+          <button id="radio-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer la Radio</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale générique Confirm/Alert/Prompt -->
+    <div id="app-dialog-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-header">
+          <h2 id="app-dialog-title">Confirmation</h2>
+          <button id="app-dialog-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="app-dialog-message" class="settings-desc" style="white-space: pre-line;"></p>
+          <div class="form-group" id="app-dialog-input-group" hidden>
+            <input type="text" id="app-dialog-input" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="app-dialog-cancel" class="btn-secondary">Annuler</button>
+          <button id="app-dialog-ok" class="btn-primary">OK</button>
         </div>
       </div>
     </div>

@@ -1,12 +1,18 @@
 // Prévient la console Windows en release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod api;
+mod bpm_analyzer;
 mod commands;
 mod db;
+mod debug_log;
+mod downloader;
 mod models;
 mod player;
 mod scanner;
 mod state;
+mod ua_pool;
+
 
 use player::PlayerCommand;
 use state::AppState;
@@ -223,10 +229,45 @@ fn main() {
             }
 
             update_shortcut_registrations(app.handle());
+
+            // Fenêtre Overlay pré-créée (masquée) au démarrage, sur le thread
+            // principal, dans setup() — c'est le seul endroit où la création
+            // de fenêtre est garantie sûre. Créer la fenêtre à la demande
+            // depuis une commande async (thread différent) provoquait un
+            // blocage ("Ne répond pas") : open_overlay_window/close_overlay_window
+            // ne font plus que montrer/masquer cette fenêtre existante.
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "overlay",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Rustify - Overlay")
+            .inner_size(210.0, 210.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?;
+
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // La fenêtre Overlay ne doit jamais être détruite : on la
+                // masque simplement pour pouvoir la réafficher instantanément
+                // (évite de recréer une fenêtre à chaque ouverture).
+                if window.label() == "overlay" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
+                // Seule la fenêtre principale se réduit dans le System Tray.
+                if window.label() != "main" {
+                    return;
+                }
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
                 let min_to_tray = if let Ok(conn) = state.db.lock() {
@@ -256,6 +297,9 @@ fn main() {
             commands::prev_track,
             commands::toggle_repeat,
             commands::toggle_shuffle,
+            commands::toggle_smart_shuffle,
+            commands::trim_queue_to_current,
+
             commands::get_player_state,
             commands::create_playlist,
             commands::add_to_playlist,
@@ -279,17 +323,63 @@ fn main() {
             commands::dislike_track,
             commands::update_track_likes_dislikes,
             commands::toggle_favorite,
+            commands::toggle_ecstasy,
             commands::get_favorites,
+
             commands::get_play_history,
             commands::clear_play_history,
             commands::get_track_live_stats,
             commands::save_last_player_state,
             commands::get_last_player_state,
             commands::restore_player_track,
-            commands::enable_overlay_mode,
-            commands::disable_overlay_mode,
+            commands::open_overlay_window,
+            commands::close_overlay_window,
             commands::set_overlay_click_through,
+            commands::get_eq_state,
+            commands::set_eq_enabled,
+            commands::create_eq_profile,
+            commands::update_eq_profile,
+            commands::delete_eq_profile,
+            commands::set_eq_profile_device,
+            commands::set_active_eq_profile,
+            commands::update_track_enrichment,
+            commands::batch_update_track_enrichment,
+            commands::update_artist_enrichment,
+            // ---- Commandes HTTP (API externes → Rust) ----
+            commands::fetch_image_as_base64,
+            commands::fetch_online_track_metadata,
+            commands::fetch_artist_online_metadata,
+            commands::fetch_artist_web_photo,
+            commands::fetch_band_members_and_bio,
+            commands::enrich_track_advanced,
+            commands::batch_enrich_tracks,
+            commands::enrich_artist_advanced,
+            commands::batch_enrich_artists,
+            commands::get_ua_stats,
+            commands::get_debug_logs,
+            commands::clear_debug_logs,
+            commands::register_listen_event,
+            commands::get_or_create_smart_session,
+            commands::get_next_smart_track,
+            commands::update_smart_session,
+            commands::submit_algo_feedback,
+            // ---- Commandes du Téléchargeur spotDL / yt-dlp ----
+            commands::check_downloader_env,
+            commands::setup_downloader_env,
+            commands::start_download,
+            commands::cancel_download,
+            commands::get_downloader_settings,
+            commands::save_downloader_settings,
+            commands::analyze_track_bpm,
+            commands::analyze_all_missing_bpm,
+            // ---- Commandes Radios & Streaming ----
+            commands::get_radios,
+            commands::save_radio,
+            commands::delete_radio,
+            commands::check_radio_online,
+            commands::resolve_video_audio_stream,
         ])
+
         .run(tauri::generate_context!())
         .expect("erreur lors de l'exécution de Rustify");
 }
