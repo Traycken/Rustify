@@ -9,14 +9,14 @@
 <div align="center">
 
 ### Interface principale
-![Rustify - Interface Principale](./Screenshot_3.png)
+![Rustify - Interface Principale](./Screenshot_1.png)
 
 <br/>
 
 ### Détails & Éléments d'interface
 | Lecteur / Vinyle | Pochettes & Vues |
 | :---: | :---: |
-| ![Aperçu Lecteur](./Screenshot_1.png) | ![Aperçu Vues](./Screenshot_2.png) |
+| ![Aperçu Lecteur](./Screenshot_3.png) | ![Aperçu Vues](./Screenshot_2.png) |
 
 </div>
 
