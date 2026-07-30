@@ -221,21 +221,41 @@ export function initOverlayEvents(callbacks: {
   $("overlay-btn-fav")?.addEventListener("click", callbacks.toggleFavCurrent);
   $("overlay-btn-ecstasy")?.addEventListener("click", callbacks.toggleEcstasyCurrent);
 
-  // Déplacement de la fenêtre Overlay par glissement du vinyle
-  const disc = $("overlay-vinyl-disc");
-  if (disc) {
-    disc.addEventListener("mousedown", (e) => {
-      if (e.button === 0) {
-        const target = e.target as HTMLElement;
-        if (
-          !target.closest(".overlay-hud-btn") &&
-          !target.closest("#overlay-volume-popover") &&
-          !target.classList.contains("ring-hit")
-        ) {
-          getCurrentWindow().startDragging();
+  /* =========================================================================================
+   * CRITICAL SYSTEM WARNING - NE TOUCHER SOUS AUCUN PRÉTEXTE / DO NOT TOUCH UNDER ANY CIRCUMSTANCE
+   * =========================================================================================
+   * LE CODE CI-DESSOUS ASSURE LE DÉPLACEMENT (DRAG & DROP) DE LA FENÊTRE OVERLAY VINYLE.
+   * EN CAS DE MODIFICATION DE LA STRUCTURE HTML DE L'OVERLAY OU DE CE BLOC, LE DÉPLACEMENT
+   * SE CASSE AUTOMATIQUEMENT SUR TAURI V2 / WINDOWS.
+   * CONSERVEZ STRICTEMENT `getCurrentWindow().startDragging()` ET LES ATTRIBUTS `data-tauri-drag-region`.
+   * NE JAMAIS MODIFIER NI SUPPRIMER CETTE LOGIQUE DE DÉPLACEMENT !
+   * =========================================================================================
+   */
+  const handleOverlayDrag = async (e: MouseEvent) => {
+    if (e.button === 0) {
+      const target = e.target as HTMLElement;
+      if (
+        !target.closest(".overlay-hud-btn") &&
+        !target.closest("#overlay-volume-popover") &&
+        !target.closest(".overlay-vol-range") &&
+        !target.classList.contains("ring-hit")
+      ) {
+        try {
+          await getCurrentWindow().startDragging();
+        } catch (err) {
+          console.warn("Erreur startDragging overlay:", err);
         }
       }
-    });
+    }
+  };
+
+  const disc = $("overlay-vinyl-disc");
+  if (disc) {
+    disc.addEventListener("mousedown", handleOverlayDrag);
+  }
+  const overlayContainer = $("overlay-container");
+  if (overlayContainer) {
+    overlayContainer.addEventListener("mousedown", handleOverlayDrag);
   }
 
   // Popover du volume

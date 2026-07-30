@@ -2152,10 +2152,11 @@ input:checked + .slider:before {
   justify-content: space-between;
 }
 
-/* ==========================================================================
-   MODE OVERLAY (MINI-LECTEUR VINYLE CIRCULAIRE)
-   ========================================================================== */
-
+/* =========================================================================================
+ * CRITICAL WARNING: MODE OVERLAY VINYLE (NE TOUCHER AU DRAG & DROP SOUS AUCUN PRÉTEXTE !)
+ * LES RÈGLES DE CURSEUR ET LE POSITIONNEMENT CI-DESSOUS PERMETTENT LE GLISSEMENT DE LA FENÊTRE.
+ * NE PAS MODIFIER NI TOUCHER CE BLOC SOUS AUCUN PRÉTEXTE !
+ * ========================================================================================= */
 body.overlay-mode, html.overlay-mode {
   background: transparent !important;
   overflow: hidden !important;

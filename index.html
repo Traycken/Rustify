@@ -921,10 +921,12 @@
       </div>
     </footer>
 
-    <!-- ================================================================= -->
-    <!-- OVERLAY MINI-LECTEUR VINYLE FLOTTANT (CIRCULAR)                   -->
-    <!-- ================================================================= -->
-    <div id="overlay-container" class="overlay-container" hidden>
+    <!-- ========================================================================================= -->
+    <!-- CRITICAL WARNING: OVERLAY MINI-LECTEUR VINYLE FLOTTANT (NE TOUCHER SOUS AUCUN PRÉTEXTE !) -->
+    <!-- LES ATTRIBUTS `data-tauri-drag-region` CI-DESSOUS SONT OBLIGATOIRES POUR LE DRAG & DROP.  -->
+    <!-- NE JAMAIS RETIRER `data-tauri-drag-region` DES ÉLÉMENTS DE CE BLOC OVERLAY !              -->
+    <!-- ========================================================================================= -->
+    <div id="overlay-container" class="overlay-container" data-tauri-drag-region hidden>
       <div id="overlay-vinyl-disc" class="overlay-vinyl-disc" data-tauri-drag-region>
         <div class="overlay-vinyl-body" data-tauri-drag-region>
           <div id="overlay-vinyl-grooves" class="overlay-vinyl-grooves" data-tauri-drag-region></div>
@@ -946,7 +948,7 @@
           </svg>
         </div>
 
-        <div class="overlay-hud">
+        <div class="overlay-hud" data-tauri-drag-region>
           <div id="overlay-time-remaining" class="overlay-time-pill" data-tauri-drag-region>-0:00</div>
 
           <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-1" title="Volume"><i class="fa-solid fa-volume-high"></i></button>
