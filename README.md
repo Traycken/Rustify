@@ -13,8 +13,8 @@
 
 <br/>
 
-### Détails & Éléments d'interface
-| Lecteur / Vinyle | Pochettes & Vues |
+### Overlay Déplaçable
+|  |  |
 | :---: | :---: |
 | ![Aperçu Lecteur](./Screenshot_3.png) | ![Aperçu Vues](./Screenshot_2.png) |
 
