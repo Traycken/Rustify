@@ -13,7 +13,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Track, PlayerState, EqState, FrontendLogEntry, AlgoFeedbackState } from "./types";
+import type { Track, PlayerState, EqState, FrontendLogEntry, AlgoFeedbackState, MoodPlaylistOption } from "./types";
 
 export const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -125,3 +125,29 @@ export function incrementSaveStateCounter(): number {
   saveStateCounter++;
   return saveStateCounter;
 }
+
+export let activeMoodId: string | null = null;
+export function setActiveMoodId(id: string | null) {
+  activeMoodId = id;
+}
+
+export let activeMoodPlaylistId: string | null = null;
+export function setActiveMoodPlaylistId(id: string | null) {
+  activeMoodPlaylistId = id;
+}
+
+export let activeMoodPlaylistOption: MoodPlaylistOption | null = null;
+export function setActiveMoodPlaylistOption(option: MoodPlaylistOption | null) {
+  activeMoodPlaylistOption = option;
+}
+
+export let activeSmartShufflePlaylistId: string | null = null;
+export function setActiveSmartShufflePlaylistId(id: string | null) {
+  activeSmartShufflePlaylistId = id;
+}
+
+export let activeSmartShufflePlaylistName: string | null = null;
+export function setActiveSmartShufflePlaylistName(name: string | null) {
+  activeSmartShufflePlaylistName = name;
+}
+

@@ -19,7 +19,7 @@ import { escapeHtml } from "../utils/formatting";
 
 export interface GenresTabCallbacks {
   switchView: (view: string) => void;
-  renderTracks: (tracks: Track[]) => void;
+  renderTracks: (tracks: Track[], playlistId?: string) => void;
   pushNavState: (state: NavState) => void;
   openGenericContextMenu: (e: MouseEvent, target: ContextTarget) => void;
 }

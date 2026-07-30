@@ -101,8 +101,16 @@ pub fn toggle_smart_shuffle(state: State<AppState>) -> Result<bool, String> {
     let mut status = state.player_status.lock().map_err(map_err)?;
     status.smart_shuffle_active = !status.smart_shuffle_active;
     let new_val = status.smart_shuffle_active;
-    let _ = send(&state, PlayerCommand::ToggleSmartShuffle);
+    let _ = send(&state, PlayerCommand::SetSmartShuffleActive(new_val));
     Ok(new_val)
+}
+
+#[tauri::command]
+pub fn set_smart_shuffle_active(state: State<AppState>, active: bool) -> Result<bool, String> {
+    let mut status = state.player_status.lock().map_err(map_err)?;
+    status.smart_shuffle_active = active;
+    let _ = send(&state, PlayerCommand::SetSmartShuffleActive(active));
+    Ok(active)
 }
 
 
@@ -119,10 +127,11 @@ pub fn get_player_state(state: State<AppState>) -> Result<PlayerState, String> {
     let mut status = state.player_status.lock().map_err(map_err)?.clone();
     if let Some(ref mut track) = status.current_track {
         if let Ok(conn) = state.db.lock() {
-            if let Ok((likes, dislikes, is_fav)) = db::get_track_live_stats(&conn, &track.id) {
+            if let Ok((likes, dislikes, is_fav, is_ecstasy)) = db::get_track_live_stats(&conn, &track.id) {
                 track.likes = likes;
                 track.dislikes = dislikes;
                 track.is_favorite = is_fav;
+                track.is_ecstasy = is_ecstasy;
             }
         }
     }
@@ -488,7 +497,7 @@ pub fn clear_play_history(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_track_live_stats(state: State<AppState>, track_id: String) -> Result<(i32, i32, bool), String> {
+pub fn get_track_live_stats(state: State<AppState>, track_id: String) -> Result<(i32, i32, bool, bool), String> {
     let conn = state.db.lock().map_err(map_err)?;
     db::get_track_live_stats(&conn, &track_id).map_err(map_err)
 }
@@ -720,6 +729,14 @@ pub async fn fetch_online_track_metadata(
     title: String,
 ) -> Result<Option<crate::api::OnlineTrackMetadata>, String> {
     Ok(crate::api::fetch_online_track_metadata(&artist, &title).await)
+}
+
+/// Recherche en ligne de morceaux par mot-clé (titre / artiste).
+#[tauri::command]
+pub async fn search_online_tracks(
+    query: String,
+) -> Result<Vec<crate::api::OnlineTrackMetadata>, String> {
+    Ok(crate::api::search_online_tracks(&query).await)
 }
 
 /// Recherche la photo (Deezer en priorité) et le genre (repli iTunes) d'un artiste.
@@ -1189,6 +1206,16 @@ pub fn register_listen_event(
 // Commandes : Smart Shuffle
 // ============================================================================
 
+/// Définit ou réinitialise la playlist cible du Smart Shuffle.
+#[tauri::command]
+pub fn set_smart_shuffle_playlist(
+    state: State<AppState>,
+    playlist_id: Option<String>,
+) -> Result<db::SmartSession, String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::set_smart_shuffle_playlist(&conn, playlist_id).map_err(map_err)
+}
+
 /// Retourne la session active ou en crée une nouvelle (TTL 24h).
 #[tauri::command]
 pub fn get_or_create_smart_session(
@@ -1422,20 +1449,87 @@ pub fn delete_radio(state: State<AppState>, id: String) -> Result<(), String> {
     db::delete_radio(&conn, &id).map_err(map_err)
 }
 
+fn normalize_stream_url(raw_url: &str) -> String {
+    let mut url = raw_url.trim().to_string();
+    if url.is_empty() {
+        return url;
+    }
+
+    if url.starts_with('@') {
+        url = format!("https://www.youtube.com/{}", url);
+    } else if !url.starts_with("http://") && !url.starts_with("https://") {
+        if url.starts_with("twitch.tv/") || url.starts_with("www.twitch.tv/") {
+            url = format!("https://{}", url);
+        } else if url.starts_with("youtube.com/") || url.starts_with("www.youtube.com/") || url.starts_with("youtu.be/") {
+            url = format!("https://{}", url);
+        }
+    }
+
+    let lower = url.to_lowercase();
+    if lower.contains("youtube.com") || lower.contains("youtu.be") {
+        if !lower.contains("/watch") && !lower.contains("youtu.be/") {
+            if lower.contains("/@") || lower.contains("/channel/") || lower.contains("/c/") || lower.contains("/user/") {
+                if !lower.ends_with("/live") {
+                    let trimmed = url.trim_end_matches('/');
+                    url = format!("{}/live", trimmed);
+                }
+            }
+        }
+    }
+
+    url
+}
+
 #[tauri::command]
 pub async fn check_radio_online(state: State<'_, AppState>, id: String, stream_url: String) -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(map_err)?;
+    let target_url = normalize_stream_url(&stream_url);
+    let lower = target_url.to_lowercase();
+    let is_video_platform = lower.contains("youtube.com")
+        || lower.contains("youtu.be")
+        || lower.contains("twitch.tv")
+        || lower.contains("twitch.com");
 
-    let is_online = match client.head(&stream_url).send().await {
-        Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 405 => true,
-        _ => match client.get(&stream_url).header("Range", "bytes=0-100").send().await {
-            Ok(resp) => resp.status().is_success() || resp.status().as_u16() == 206,
-            Err(_) => false,
-        },
+    let is_twitch = lower.contains("twitch.tv") || lower.contains("twitch.com");
+    let format_arg = if is_twitch { "b/best/bestaudio" } else { "bestaudio/best" };
+
+    let is_online = if is_video_platform {
+        let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
+        if yt_dlp_bin.exists() {
+            let output = tokio::process::Command::new(yt_dlp_bin)
+                .env("PYTHONIOENCODING", "utf-8")
+                .env("PYTHONUTF8", "1")
+                .arg("-g")
+                .arg("-f")
+                .arg(format_arg)
+                .arg("--no-warnings")
+                .arg(&target_url)
+                .output()
+                .await;
+
+            match output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    stdout.lines().any(|l| l.trim().starts_with("http"))
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
+    } else {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .danger_accept_invalid_certs(true)
+            .build()
+            .map_err(map_err)?;
+
+        match client.head(&target_url).send().await {
+            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 405 => true,
+            _ => match client.get(&target_url).header("Range", "bytes=0-100").send().await {
+                Ok(resp) => resp.status().is_success() || resp.status().as_u16() == 206,
+                Err(_) => false,
+            },
+        }
     };
 
     if let Ok(conn) = state.db.lock() {
@@ -1447,16 +1541,33 @@ pub async fn check_radio_online(state: State<'_, AppState>, id: String, stream_u
 
 #[tauri::command]
 pub async fn resolve_video_audio_stream(url: String) -> Result<String, String> {
-    let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
-    if !yt_dlp_bin.exists() {
-        return Ok(url);
+    let target_url = normalize_stream_url(&url);
+    let lower = target_url.to_lowercase();
+    let is_video_platform = lower.contains("youtube.com")
+        || lower.contains("youtu.be")
+        || lower.contains("twitch.tv")
+        || lower.contains("twitch.com");
+
+    if !is_video_platform {
+        return Ok(target_url);
     }
 
+    let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
+    if !yt_dlp_bin.exists() {
+        return Err("yt-dlp n'est pas installé dans l'environnement embarqué.".into());
+    }
+
+    let is_twitch = lower.contains("twitch.tv") || lower.contains("twitch.com");
+    let format_arg = if is_twitch { "b/best/bestaudio" } else { "bestaudio/best" };
+
     let output = tokio::process::Command::new(yt_dlp_bin)
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .arg("-g")
         .arg("-f")
-        .arg("bestaudio/best")
-        .arg(&url)
+        .arg(format_arg)
+        .arg("--no-warnings")
+        .arg(&target_url)
         .output()
         .await
         .map_err(|e| format!("Échec d'exécution yt-dlp: {}", e))?;
@@ -1465,13 +1576,286 @@ pub async fn resolve_video_audio_stream(url: String) -> Result<String, String> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if let Some(line) = stdout.lines().next() {
             let clean = line.trim();
-            if !clean.is_empty() {
+            if clean.starts_with("http") {
                 return Ok(clean.to_string());
             }
         }
     }
 
-    Ok(url)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("not currently live") || stderr.contains("is offline") {
+        return Err("Le stream en direct YouTube / Twitch est actuellement hors-ligne.".into());
+    }
+
+    Err("Impossible d'extraire le flux en direct (stream hors-ligne ou URL invalide).".into())
+}
+
+#[tauri::command]
+pub fn remove_from_playlist(state: State<AppState>, playlist_id: String, track_id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::remove_from_playlist(&conn, &playlist_id, &track_id).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn delete_track(state: State<AppState>, track_id: String, delete_file: bool) -> Result<(), String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::delete_track(&conn, &track_id, delete_file).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn delete_artist(state: State<AppState>, artist_name: String, delete_files: bool) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::delete_artist(&conn, &artist_name, delete_files).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn delete_album(state: State<AppState>, album_name: String, artist_name: Option<String>, delete_files: bool) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::delete_album(&conn, &album_name, artist_name.as_deref(), delete_files).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn delete_genre(state: State<AppState>, genre_name: String, delete_files: bool) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(map_err)?;
+    db::delete_genre(&conn, &genre_name, delete_files).map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn get_channel_live_streams(url: String) -> Result<Vec<crate::models::ChannelLiveStreamItem>, String> {
+    let target_url = normalize_stream_url(&url);
+    let lower = target_url.to_lowercase();
+    if !lower.contains("youtube.com") && !lower.contains("youtu.be") {
+        return Ok(Vec::new());
+    }
+
+    let streams_url = if lower.contains("/@") || lower.contains("/channel/") || lower.contains("/c/") || lower.contains("/user/") {
+        let trimmed = target_url.trim_end_matches('/').trim_end_matches("/live");
+        format!("{}/streams", trimmed)
+    } else {
+        target_url.clone()
+    };
+
+    let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
+    if !yt_dlp_bin.exists() {
+        return Err("yt-dlp n'est pas disponible.".into());
+    }
+
+    let output = tokio::process::Command::new(yt_dlp_bin)
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
+        .arg("--flat-playlist")
+        .arg("-j")
+        .arg("--match-filter")
+        .arg("live_status=is_live")
+        .arg("--no-warnings")
+        .arg(&streams_url)
+        .output()
+        .await
+        .map_err(|e| format!("Échec d'exécution yt-dlp: {}", e))?;
+
+    let mut results = Vec::new();
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let clean = line.trim();
+            if clean.is_empty() {
+                continue;
+            }
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(clean) {
+                let is_live = val.get("live_status").and_then(|v| v.as_str()) == Some("is_live")
+                    || val.get("is_live").and_then(|v| v.as_bool()) == Some(true);
+
+                if is_live {
+                    let id = val.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let title = val.get("title").and_then(|v| v.as_str()).unwrap_or("En direct").to_string();
+                    let web_url = val.get("webpage_url").and_then(|v| v.as_str())
+                        .or_else(|| val.get("url").and_then(|v| v.as_str()))
+                        .unwrap_or("");
+                    let full_url = if web_url.starts_with("http") {
+                        web_url.to_string()
+                    } else if !id.is_empty() {
+                        format!("https://www.youtube.com/watch?v={}", id)
+                    } else {
+                        continue;
+                    };
+
+                    let thumb = val.get("thumbnails")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.last())
+                        .and_then(|t| t.get("url"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    results.push(crate::models::ChannelLiveStreamItem {
+                        id,
+                        title,
+                        url: full_url,
+                        thumbnail_url: thumb,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+fn extract_html_tag(html: &str, property: &str) -> Option<String> {
+    let lower_html = html.to_lowercase();
+    let prop_lower = property.to_lowercase();
+    if let Some(idx) = lower_html.find(&format!("property=\"{}\"", prop_lower))
+        .or_else(|| lower_html.find(&format!("property='{}'", prop_lower)))
+        .or_else(|| lower_html.find(&format!("name=\"{}\"", prop_lower)))
+    {
+        let snippet = &html[idx..std::cmp::min(idx + 300, html.len())];
+        if let Some(c_idx) = snippet.find("content=\"").or_else(|| snippet.find("content='")) {
+            let quote = snippet.chars().nth(c_idx + 8).unwrap_or('"');
+            let start = c_idx + 9;
+            if let Some(end) = snippet[start..].find(quote) {
+                let val = snippet[start..start + end].trim();
+                if !val.is_empty() {
+                    return Some(val.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_html_title(html: &str) -> Option<String> {
+    let lower = html.to_lowercase();
+    if let Some(start) = lower.find("<title>") {
+        if let Some(end_idx) = lower[start + 7..].find("</title>") {
+            let title = html[start + 7..start + 7 + end_idx].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub async fn fetch_radio_online_metadata(url: String) -> Result<crate::models::RadioOnlineMetadataResult, String> {
+    let target_url = normalize_stream_url(&url);
+    if target_url.trim().is_empty() {
+        return Err("URL vide".into());
+    }
+
+    let lower = target_url.to_lowercase();
+    let is_video_platform = lower.contains("youtube.com")
+        || lower.contains("youtu.be")
+        || lower.contains("twitch.tv")
+        || lower.contains("twitch.com");
+
+    let mut result = crate::models::RadioOnlineMetadataResult {
+        is_video: is_video_platform,
+        ..Default::default()
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(map_err)?;
+
+    // Déterminer la page d'accueil de la chaîne pour récupérer sa vraie photo de profil (avatar)
+    let channel_home_url = if lower.contains("twitch.tv/") || lower.contains("twitch.com/") {
+        let parts: Vec<&str> = target_url.split("twitch.tv/").collect();
+        if parts.len() > 1 {
+            let user = parts[1].split('/').next().unwrap_or("");
+            format!("https://www.twitch.tv/{}", user)
+        } else {
+            target_url.clone()
+        }
+    } else if lower.contains("youtube.com") || lower.contains("youtu.be") {
+        if lower.contains("/@") {
+            let parts: Vec<&str> = target_url.split("/@").collect();
+            if parts.len() > 1 {
+                let handle = parts[1].split('/').next().unwrap_or("");
+                format!("https://www.youtube.com/@{}", handle)
+            } else {
+                target_url.clone()
+            }
+        } else {
+            target_url.clone()
+        }
+    } else {
+        target_url.clone()
+    };
+
+    if let Ok(resp) = client.get(&channel_home_url).send().await {
+        if let Ok(html) = resp.text().await {
+            if let Some(img) = extract_html_tag(&html, "og:image") {
+                result.cover_url = Some(img);
+            }
+            if let Some(title) = extract_html_tag(&html, "og:title").or_else(|| extract_html_title(&html)) {
+                let clean_title = title.replace(" - YouTube", "").replace(" - Twitch", "").trim().to_string();
+                result.name = Some(clean_title);
+            }
+            if let Some(desc) = extract_html_tag(&html, "og:description") {
+                result.country = Some(desc);
+            }
+        }
+    }
+
+    if is_video_platform {
+        let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
+        if yt_dlp_bin.exists() {
+            let output = tokio::process::Command::new(yt_dlp_bin)
+                .arg("-j")
+                .arg("--playlist-items")
+                .arg("1")
+                .arg("--no-warnings")
+                .arg(&target_url)
+                .output()
+                .await;
+
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                        if result.name.is_none() {
+                            let name = val.get("uploader")
+                                .or_else(|| val.get("channel"))
+                                .or_else(|| val.get("playlist_channel"))
+                                .or_else(|| val.get("playlist_uploader"))
+                                .or_else(|| val.get("title"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            result.name = name;
+                        }
+
+                        if result.genre.is_none() {
+                            let genre = val.get("categories")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
+                                .or_else(|| val.get("playlist_title").and_then(|v| v.as_str()).map(|s| s.to_string()));
+                            result.genre = genre;
+                        }
+
+                        if result.country.is_none() {
+                            let country = val.get("uploader_id")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            result.country = country;
+                        }
+
+                        if result.cover_url.is_none() {
+                            let cover_url = val.get("uploader_avatar")
+                                .or_else(|| val.get("channel_avatar"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            result.cover_url = cover_url;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 

@@ -96,10 +96,11 @@ export async function openMetadataModal(track: Track, onLibraryReload?: () => Pr
   const onlineResultsBox = $("online-results-box");
 
   try {
-    const stats = await invoke<[number, number, boolean]>("get_track_live_stats", { trackId: track.id || track.path });
+    const stats = await invoke<[number, number, boolean, boolean]>("get_track_live_stats", { trackId: track.id || track.path });
     track.likes = stats[0];
     track.dislikes = stats[1];
     track.is_favorite = stats[2];
+    track.is_ecstasy = stats[3];
   } catch (err) {
     console.warn("Erreur chargement des métadonnées en direct :", err);
   }
@@ -209,6 +210,7 @@ export async function fetchOnlineMetadata(artist: string, title: string): Promis
       year: result.year || 0,
       coverUrl: null,
       coverBase64: result.cover_base64,
+      cover_base64: result.cover_base64,
       source: result.source,
     };
   } catch (e) {
@@ -407,7 +409,11 @@ export async function enrichLibraryInBatch(tracks: Track[], onDone?: () => Promi
   }
 }
 
-export function setupMetadataModalEvents(onSaved?: () => Promise<void>) {
+let onDeleteTrackCallback: ((track: Track) => Promise<void>) | null = null;
+
+export function setupMetadataModalEvents(onSaved?: () => Promise<void>, onDeleteTrack?: (track: Track) => Promise<void>) {
+  if (onDeleteTrack) onDeleteTrackCallback = onDeleteTrack;
+
   const metaTitleInput = $<HTMLInputElement>("meta-input-title");
   const metaArtistInput = $<HTMLInputElement>("meta-input-artist");
   const metaAlbumInput = $<HTMLInputElement>("meta-input-album");
@@ -419,6 +425,14 @@ export function setupMetadataModalEvents(onSaved?: () => Promise<void>) {
 
   $("modal-close")?.addEventListener("click", closeMetadataModal);
   $("modal-btn-cancel")?.addEventListener("click", closeMetadataModal);
+
+  $("modal-btn-delete")?.addEventListener("click", async () => {
+    if (activeModalTrack && onDeleteTrackCallback) {
+      const trackToDelete = activeModalTrack;
+      closeMetadataModal();
+      await onDeleteTrackCallback(trackToDelete);
+    }
+  });
 
   $("btn-fetch-online")?.addEventListener("click", async () => {
     const btn = $<HTMLButtonElement>("btn-fetch-online");
@@ -469,8 +483,8 @@ export function setupMetadataModalEvents(onSaved?: () => Promise<void>) {
 
   $("btn-use-online-data")?.addEventListener("click", () => {
     if (!pendingOnlineResult) return;
-    if (metaTitleInput) metaTitleInput.value = pendingOnlineResult.title;
-    if (metaArtistInput) metaArtistInput.value = pendingOnlineResult.artist;
+    if (metaTitleInput) metaTitleInput.value = pendingOnlineResult.title || "";
+    if (metaArtistInput) metaArtistInput.value = pendingOnlineResult.artist || "";
     if (pendingOnlineResult.album && metaAlbumInput) metaAlbumInput.value = pendingOnlineResult.album;
     if (pendingOnlineResult.genre && metaGenreInput) metaGenreInput.value = pendingOnlineResult.genre;
     if (pendingOnlineResult.year && metaYearInput) metaYearInput.value = String(pendingOnlineResult.year);

@@ -25,10 +25,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { $, allTracks, currentQueue, isSeeking, setIsSeeking, smartShuffleActive, nextSmartTrack, setNextSmartTrack } from "./state";
-import type { PlayerState, Radio } from "./types";
+import type { PlayerState, Radio, Track, ArtistSummary, AlbumSummary } from "./types";
 
 import { initConsoleInterceptors, loadBackendLogs, loadFrontendLogs, initDebugLogEvents } from "./utils/logger";
-import { appPrompt, appConfirm, appAlert, showAlert } from "./utils/dialog";
+import { appPrompt, appConfirm, appAlert, showAlert, appDeleteConfirm } from "./utils/dialog";
+import { showToast } from "./utils/toast";
 import { updateSliderTrack, fmtTime } from "./utils/formatting";
 import { switchView, pushNavState, setNavCallbacks, initCollapsibleSections, goNavBack, goNavForward } from "./utils/navigation";
 
@@ -37,6 +38,7 @@ import { openMetadataModal, closeMetadataModal, setupMetadataModalEvents, fetchO
 import { openAlbumModal, closeAlbumModal, setupAlbumModalEvents } from "./modals/albumModal";
 import { openArtistModal, closeArtistModal, setupArtistModalEvents, enrichArtistPhotosInBatch } from "./modals/artistModal";
 import { openGenreModal, setupGenreModalEvents } from "./modals/genreModal";
+import { openLyricsPopover, toggleLyricsPopover, setupLyricsModalEvents } from "./modals/lyricsModal";
 
 import { openOverlayWindow, closeOverlayWindow, toggleClickThrough, initOverlayEvents } from "./player/overlay";
 import {
@@ -51,6 +53,8 @@ import {
   registerListenEventBeforeSkip,
   playFromSmartTrack,
   calculateNextSmartTrack,
+  bindAlgoFeedbackButtons,
+  startSmartShuffleForPlaylist,
 } from "./player/playerEngine";
 
 import { loadLibrary, renderTracks, renderTracksInContainer, updateMissingMetadataCount, setTracksTabCallbacks, filterBySimilarTrack } from "./tabs/tracksTab";
@@ -58,8 +62,9 @@ import { loadAlbums, renderAlbumsGrid, filterByAlbum, setAlbumsTabCallbacks } fr
 import { loadArtists, renderArtistsGrid, openArtistView, openArtistByName, isArtistGroup, setArtistsTabCallbacks } from "./tabs/artistsTab";
 import { loadGenres, filterByGenre, parseGenres, setGenresTabCallbacks } from "./tabs/genresTab";
 import { loadTempo, filterByTempo, setTempoTabCallbacks } from "./tabs/tempoTab";
+import { loadMood, setMoodTabCallbacks } from "./tabs/moodTab";
 import { loadPlaylists, setPlaylistsTabCallbacks } from "./tabs/playlistsTab";
-import { loadRadios, playRadio, initRadioEvents, getActiveRadio, getRadioAudioEl, syncRadioAudioDevice } from "./tabs/radiosTab";
+import { loadRadios, playRadio, stopRadio, initRadioEvents, getActiveRadio, getRadioAudioEl, syncRadioAudioDevice, setRadioVolume } from "./tabs/radiosTab";
 import { loadRecents, setRecentsTabCallbacks } from "./tabs/recentsTab";
 import { loadFavorites, setFavoritesTabCallbacks } from "./tabs/favoritesTab";
 import { loadEcstasyTracks, setEcstasyTabCallbacks } from "./tabs/ecstasyTab";
@@ -79,6 +84,7 @@ setNavCallbacks({
   loadArtists,
   loadGenres,
   loadTempo,
+  loadMood,
   loadPlaylists,
   loadRecents,
   loadFavorites,
@@ -93,6 +99,18 @@ setNavCallbacks({
   },
   handleSearchInput,
 });
+
+export function refreshActiveView() {
+  const activeNav = document.querySelector(".nav-item.active") as HTMLElement | null;
+  const currentView = activeNav?.dataset.view || "tracks";
+  if (currentView === "ecstasy") {
+    loadEcstasyTracks();
+  } else if (currentView === "favorites") {
+    loadFavorites();
+  } else if (currentView === "tracks") {
+    renderTracks(allTracks);
+  }
+}
 
 setContextMenuCallbacks({
   playTrackTarget: (target) => {
@@ -109,24 +127,44 @@ setContextMenuCallbacks({
   filterByAlbum,
   filterBySimilar: filterBySimilarTrack,
   toggleFavTrack: async (track) => {
-    await invoke("toggle_favorite", { targetType: "track", targetId: track.id });
-    await loadLibrary();
+    const isFav = await invoke<boolean>("toggle_favorite", { targetType: "track", targetId: track.id });
+    track.is_favorite = isFav;
+    const t = allTracks.find((x) => x.id === track.id || x.path === track.path);
+    if (t) t.is_favorite = isFav;
     await refreshPlayerState();
+    refreshActiveView();
   },
   toggleEcstasyTrack: async (track) => {
-    await invoke("toggle_ecstasy", { trackId: track.id });
-    await loadLibrary();
+    const isExt = await invoke<boolean>("toggle_ecstasy", { trackId: track.id });
+    track.is_ecstasy = isExt;
+    const t = allTracks.find((x) => x.id === track.id || x.path === track.path);
+    if (t) t.is_ecstasy = isExt;
     await refreshPlayerState();
+    refreshActiveView();
   },
   likeTrack: async (track) => {
-    await invoke("add_like", { trackId: track.id, isLike: true });
-    await loadLibrary();
+    const res = await invoke<[number, number]>("like_track", { trackId: track.id });
+    track.likes = res[0];
+    track.dislikes = res[1];
+    const t = allTracks.find((x) => x.id === track.id || x.path === track.path);
+    if (t) {
+      t.likes = res[0];
+      t.dislikes = res[1];
+    }
     await refreshPlayerState();
+    refreshActiveView();
   },
   dislikeTrack: async (track) => {
-    await invoke("add_like", { trackId: track.id, isLike: false });
-    await loadLibrary();
+    const res = await invoke<[number, number]>("dislike_track", { trackId: track.id });
+    track.likes = res[0];
+    track.dislikes = res[1];
+    const t = allTracks.find((x) => x.id === track.id || x.path === track.path);
+    if (t) {
+      t.likes = res[0];
+      t.dislikes = res[1];
+    }
     await refreshPlayerState();
+    refreshActiveView();
   },
   openAlbumModal,
   openArtistModal,
@@ -146,16 +184,18 @@ setContextMenuCallbacks({
       await loadPlaylists();
     }
   },
-  deletePlaylist: async (playlistId) => {
-    if (await appConfirm("Supprimer cette playlist ?")) {
-      await invoke("delete_playlist", { playlistId });
-      await loadPlaylists();
-    }
-  },
+  deletePlaylist: (playlistId) => handleDeletePlaylist(playlistId),
+  deleteTrack: (track) => handleDeleteTrack(track),
+  removeFromPlaylist: (playlistId, track) => handleRemoveFromPlaylist(playlistId, track),
+  deleteArtist: (artist) => handleDeleteArtist(artist),
+  deleteAlbum: (album) => handleDeleteAlbum(album),
+  deleteGenre: (genreName, count) => handleDeleteGenre(genreName, count),
   openTrackInfoModal: (track) => openMetadataModal(track, async () => { await loadLibrary(); }),
+  openLyricsModal: (track) => openLyricsPopover(track),
   filterByGenre,
   loadPlaylists,
   isArtistGroup,
+  startSmartShuffleForPlaylist,
 });
 
 setTracksTabCallbacks({
@@ -163,8 +203,16 @@ setTracksTabCallbacks({
   filterByAlbum,
   playFromQueue,
   openGenericContextMenu,
-  reloadFavorites: async () => { await loadFavorites(); },
-  reloadEcstasy: async () => { await loadEcstasyTracks(); },
+  startSmartShuffleForPlaylist,
+  deletePlaylist: handleDeletePlaylist,
+  reloadFavorites: async () => {
+    await loadFavorites();
+    await refreshPlayerState();
+  },
+  reloadEcstasy: async () => {
+    await loadEcstasyTracks();
+    await refreshPlayerState();
+  },
 });
 
 setAlbumsTabCallbacks({
@@ -197,10 +245,20 @@ setTempoTabCallbacks({
   loadLibrary: async () => { await loadLibrary(); },
 });
 
+setMoodTabCallbacks({
+  switchView,
+  renderTracks,
+  playFromQueue,
+  pushNavState,
+  openGenericContextMenu,
+});
+
 setPlaylistsTabCallbacks({
   switchView,
   renderTracks,
   openGenericContextMenu,
+  startSmartShuffleForPlaylist,
+  deletePlaylist: handleDeletePlaylist,
 });
 
 setRecentsTabCallbacks({
@@ -212,6 +270,8 @@ setFavoritesTabCallbacks({
   renderTracksInContainer,
   renderAlbumsGrid,
   renderArtistsGrid,
+  switchView,
+  renderTracks,
 });
 
 setEcstasyTabCallbacks({
@@ -239,8 +299,9 @@ setPlayerEngineCallbacks({
       loadQueue();
     }
   },
-  get activeRadio() { return getActiveRadio(); },
-  get radioAudioEl() { return getRadioAudioEl(); },
+  getActiveRadio,
+  getRadioAudioEl,
+  stopRadio,
   activeRadioPlaying: false,
 });
 
@@ -276,6 +337,156 @@ function handleSearchInput() {
   }
 }
 
+// ── Logique de suppression d'éléments ─────────────────────────────────────────
+async function reloadAllData() {
+  await loadLibrary();
+  await loadArtists();
+  await loadAlbums();
+  await loadGenres();
+  await loadPlaylists();
+  await loadRecents();
+  await loadFavorites();
+  await loadEcstasyTracks();
+  await refreshPlayerState();
+  refreshActiveView();
+}
+
+async function handleDeleteTrack(track: Track) {
+  const { confirmed, deleteFile } = await appDeleteConfirm({
+    title: "Supprimer le morceau",
+    message: `Voulez-vous vraiment supprimer le morceau "${track.title}" par "${track.artist}" ?\nIl sera retiré de votre bibliothèque.`,
+  });
+  if (!confirmed) return;
+
+  try {
+    await invoke("delete_track", { trackId: track.id, deleteFile });
+
+    const state = await invoke<PlayerState>("get_player_state");
+    if (state.current_track?.id === track.id || state.current_track?.path === track.path) {
+      await invoke("stop");
+    }
+
+    await reloadAllData();
+    showAlert(`Le morceau "${track.title}" a été supprimé.`);
+  } catch (err) {
+    console.error("Erreur suppression morceau", err);
+    await appAlert(`Échec de la suppression : ${err}`);
+  }
+}
+
+async function handleRemoveFromPlaylist(playlistId: string, track: Track) {
+  if (await appConfirm(`Retirer "${track.title}" de cette playlist ?`)) {
+    try {
+      await invoke("remove_from_playlist", { playlistId, trackId: track.id });
+      const tracks = await invoke<Track[]>("get_playlist_tracks", { playlistId });
+      renderTracks(tracks, playlistId);
+      await loadPlaylists();
+    } catch (err) {
+      console.error("Erreur retrait playlist", err);
+      await appAlert(`Erreur : ${err}`);
+    }
+  }
+}
+
+async function handleDeleteArtist(artist: ArtistSummary) {
+  const count = artist.track_count || 0;
+  const { confirmed, deleteFile } = await appDeleteConfirm({
+    title: "Supprimer l'artiste / groupe",
+    message: `Voulez-vous vraiment supprimer l'artiste / groupe "${artist.artist}" (${count} morceau(x)) ?\nTous les morceaux associés seront retirés de votre bibliothèque.`,
+  });
+  if (!confirmed) return;
+
+  try {
+    const deletedCount = await invoke<number>("delete_artist", { artistName: artist.artist, deleteFiles: deleteFile });
+
+    const state = await invoke<PlayerState>("get_player_state");
+    if (
+      state.current_track &&
+      (state.current_track.artist.toLowerCase() === artist.artist.toLowerCase() ||
+        state.current_track.album_artist.toLowerCase() === artist.artist.toLowerCase())
+    ) {
+      await invoke("stop");
+    }
+
+    await reloadAllData();
+    showAlert(`L'artiste "${artist.artist}" et ${deletedCount} morceau(x) ont été supprimés.`);
+  } catch (err) {
+    console.error("Erreur suppression artiste", err);
+    await appAlert(`Échec de la suppression de l'artiste : ${err}`);
+  }
+}
+
+async function handleDeleteAlbum(album: AlbumSummary) {
+  const count = album.track_count || 0;
+  const { confirmed, deleteFile } = await appDeleteConfirm({
+    title: "Supprimer l'album",
+    message: `Voulez-vous vraiment supprimer l'album "${album.album}" par "${album.album_artist}" (${count} morceau(x)) ?`,
+  });
+  if (!confirmed) return;
+
+  try {
+    const deletedCount = await invoke<number>("delete_album", {
+      albumName: album.album,
+      artistName: album.album_artist || null,
+      deleteFiles: deleteFile,
+    });
+
+    const state = await invoke<PlayerState>("get_player_state");
+    if (state.current_track && state.current_track.album.toLowerCase() === album.album.toLowerCase()) {
+      await invoke("stop");
+    }
+
+    await reloadAllData();
+    showAlert(`L'album "${album.album}" et ${deletedCount} morceau(x) ont été supprimés.`);
+  } catch (err) {
+    console.error("Erreur suppression album", err);
+    await appAlert(`Échec de la suppression de l'album : ${err}`);
+  }
+}
+
+async function handleDeleteGenre(genreName: string, tracksCount: number) {
+  const countText = tracksCount > 0 ? ` (${tracksCount} morceau(x))` : "";
+  const { confirmed, deleteFile } = await appDeleteConfirm({
+    title: "Supprimer le genre",
+    message: `Voulez-vous vraiment supprimer le genre "${genreName}"${countText} ?\nTous les morceaux associés à ce genre seront retirés de votre bibliothèque.`,
+  });
+  if (!confirmed) return;
+
+  try {
+    const deletedCount = await invoke<number>("delete_genre", { genreName, deleteFiles: deleteFile });
+
+    const state = await invoke<PlayerState>("get_player_state");
+    if (state.current_track && state.current_track.genre.toLowerCase() === genreName.toLowerCase()) {
+      await invoke("stop");
+    }
+
+    await reloadAllData();
+    showAlert(`Le genre "${genreName}" et ${deletedCount} morceau(x) ont été supprimés.`);
+  } catch (err) {
+    console.error("Erreur suppression genre", err);
+    await appAlert(`Échec de la suppression du genre : ${err}`);
+  }
+}
+
+async function handleDeletePlaylist(playlistId: string, playlistName?: string) {
+  if (playlistId === "system_liked_tracks" || playlistId === "liked") {
+    showToast("Les playlists système ne peuvent pas être supprimées.", "warning");
+    return;
+  }
+  const nameToDisplay = playlistName || "cette playlist";
+  if (await appConfirm(`Voulez-vous vraiment supprimer la playlist "${nameToDisplay}" ?`)) {
+    try {
+      await invoke("delete_playlist", { playlistId });
+      showToast(`Playlist "${nameToDisplay}" supprimée.`, "success");
+      await loadPlaylists();
+      switchView("playlists");
+    } catch (err) {
+      console.error("Erreur suppression playlist :", err);
+      showToast("Impossible de supprimer la playlist.", "error");
+    }
+  }
+}
+
 // ── Événements de démarrage & Abonnements ────────────────────────────────────
 function bindGlobalEvents() {
   initConsoleInterceptors();
@@ -283,11 +494,12 @@ function bindGlobalEvents() {
   initSettingsEvents();
   initDebugLogEvents();
   initContextMenuGlobalEvents();
+  bindAlgoFeedbackButtons();
 
-  setupMetadataModalEvents(async () => { await loadLibrary(); });
-  setupAlbumModalEvents(fetchOnlineMetadata, async () => { await loadLibrary(); await loadAlbums(); });
-  setupArtistModalEvents(loadArtists);
-  setupGenreModalEvents(async () => { await loadLibrary(); loadGenres(); });
+  setupMetadataModalEvents(async () => { await loadLibrary(); }, handleDeleteTrack);
+  setupAlbumModalEvents(fetchOnlineMetadata, async () => { await loadLibrary(); await loadAlbums(); }, handleDeleteAlbum);
+  setupArtistModalEvents(loadArtists, handleDeleteArtist);
+  setupGenreModalEvents(async () => { await loadLibrary(); loadGenres(); }, (genreName) => handleDeleteGenre(genreName, 0));
   initRadioEvents();
   initDownloaderEvents();
 
@@ -326,15 +538,26 @@ function bindGlobalEvents() {
     const activeRadio = getActiveRadio();
     const radioAudioEl = getRadioAudioEl();
     if (activeRadio && radioAudioEl && radioAudioEl.src) {
-      if (!radioAudioEl.paused) radioAudioEl.pause();
-      else await radioAudioEl.play();
-      refreshPlayerState();
+      if (radioAudioEl.paused) {
+        radioAudioEl.play().catch(() => {});
+      } else {
+        radioAudioEl.pause();
+      }
+      await refreshPlayerState();
       return;
     }
-    const state = await invoke<PlayerState>("get_player_state");
-    if (state.is_playing) await invoke("pause");
-    else await invoke("resume");
-    refreshPlayerState();
+
+    try {
+      const state = await invoke<PlayerState>("get_player_state");
+      if (state.is_playing) {
+        await invoke("pause");
+      } else {
+        await invoke("resume");
+      }
+      await refreshPlayerState();
+    } catch (err) {
+      console.error("Erreur toggle play/pause", err);
+    }
   });
 
   $("btn-next")?.addEventListener("click", async () => {
@@ -366,33 +589,61 @@ function bindGlobalEvents() {
   $("btn-like-now")?.addEventListener("click", async () => {
     const state = await invoke<PlayerState>("get_player_state");
     if (state.current_track) {
-      await invoke("add_like", { trackId: state.current_track.id, isLike: true });
-      refreshPlayerState();
+      const res = await invoke<[number, number]>("like_track", { trackId: state.current_track.id });
+      const t = allTracks.find((x) => x.id === state.current_track?.id || x.path === state.current_track?.path);
+      if (t) {
+        t.likes = res[0];
+        t.dislikes = res[1];
+      }
+      await refreshPlayerState();
+      refreshActiveView();
     }
   });
 
   $("btn-dislike-now")?.addEventListener("click", async () => {
     const state = await invoke<PlayerState>("get_player_state");
     if (state.current_track) {
-      await invoke("add_like", { trackId: state.current_track.id, isLike: false });
-      refreshPlayerState();
+      const res = await invoke<[number, number]>("dislike_track", { trackId: state.current_track.id });
+      const t = allTracks.find((x) => x.id === state.current_track?.id || x.path === state.current_track?.path);
+      if (t) {
+        t.likes = res[0];
+        t.dislikes = res[1];
+      }
+      await refreshPlayerState();
+      refreshActiveView();
     }
   });
 
   $("btn-fav-now")?.addEventListener("click", async () => {
     const state = await invoke<PlayerState>("get_player_state");
     if (state.current_track) {
-      await invoke("toggle_favorite", { targetType: "track", targetId: state.current_track.id });
-      refreshPlayerState();
+      const isFav = await invoke<boolean>("toggle_favorite", { targetType: "track", targetId: state.current_track.id });
+      const t = allTracks.find((x) => x.id === state.current_track?.id || x.path === state.current_track?.path);
+      if (t) t.is_favorite = isFav;
+      await refreshPlayerState();
+      refreshActiveView();
     }
   });
 
   $("btn-ecstasy-now")?.addEventListener("click", async () => {
     const state = await invoke<PlayerState>("get_player_state");
     if (state.current_track) {
-      await invoke("toggle_ecstasy", { trackId: state.current_track.id });
-      refreshPlayerState();
+      const isExt = await invoke<boolean>("toggle_ecstasy", { trackId: state.current_track.id });
+      const t = allTracks.find((x) => x.id === state.current_track?.id || x.path === state.current_track?.path);
+      if (t) t.is_ecstasy = isExt;
+      await refreshPlayerState();
+      refreshActiveView();
     }
+  });
+
+  setupLyricsModalEvents();
+
+  $("btn-lyrics-now")?.addEventListener("click", () => {
+    toggleLyricsPopover();
+  });
+
+  $("btn-show-lyrics")?.addEventListener("click", () => {
+    toggleLyricsPopover();
   });
 
   // Barre de recherche et saut temporel
@@ -422,6 +673,7 @@ function bindGlobalEvents() {
     volumeBar.addEventListener("input", async (e) => {
       const val = parseFloat((e.target as HTMLInputElement).value) / 100;
       await invoke("set_volume", { volume: val });
+      setRadioVolume(val);
       updateSliderTrack(volumeBar);
     });
   }
@@ -439,6 +691,7 @@ function bindGlobalEvents() {
         if (view === "artists") loadArtists();
         if (view === "genres") loadGenres();
         if (view === "tempo") loadTempo();
+        if (view === "mood") loadMood();
         if (view === "playlists") loadPlaylists();
         if (view === "radios") loadRadios();
         if (view === "recents") loadRecents();
@@ -483,6 +736,7 @@ function bindGlobalEvents() {
     toggleShuffle: () => toggleSmartShuffle(),
     toggleRepeat: async () => { await invoke("toggle_repeat"); refreshPlayerState(); },
     toggleFavCurrent: async () => { $("btn-fav-now")?.click(); },
+    toggleEcstasyCurrent: async () => { $("btn-ecstasy-now")?.click(); },
     setVolume: async (val) => { await invoke("set_volume", { volume: val }); },
   });
 }

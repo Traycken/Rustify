@@ -398,8 +398,11 @@ pub async fn run_download(
     let extra_yt_dlp = opts.extra_yt_dlp_args.clone().unwrap_or_default();
     let extra_spotdl = opts.extra_spotdl_args.clone().unwrap_or_default();
 
-    let url_lower = url.to_lowercase();
+    let url_trim = url.trim().to_string();
+    let url_lower = url_trim.to_lowercase();
     let is_spotify = url_lower.contains("spotify.com") || url_lower.contains("spotify:");
+    let is_yt_search = url_lower.starts_with("ytsearch:") || url_lower.starts_with("ytsearch1:") || url_lower.starts_with("scsearch:");
+    let is_http_url = url_lower.starts_with("http://") || url_lower.starts_with("https://") || is_spotify || is_yt_search;
 
     // Clean extra_yt_dlp of any residual --cookies-from-browser to prevent conflicts
     let mut extra_cleaned = String::new();
@@ -423,8 +426,36 @@ pub async fn run_download(
 
     let cookies_b = cookies_browser.trim();
 
-    let (exe_bin, args, tool_name) = if !is_spotify {
-        // Lien YouTube / SoundCloud / Direct -> Utiliser yt-dlp directement pour télécharger exactement la vidéo demandée
+    let (exe_bin, args, tool_name) = if is_spotify {
+        // 1) Lien Spotify -> Utiliser spotDL avec métadonnées Spotify
+        let mut spot_args: Vec<String> = Vec::new();
+        spot_args.push(url_trim.clone());
+        spot_args.push("--threads".to_string());
+        spot_args.push(threads.to_string());
+        spot_args.push("--audio".to_string());
+        for s in audio_sources {
+            spot_args.push(s);
+        }
+
+        let mut yt_dlp_combined = Vec::new();
+        if !cookies_b.is_empty() && cookies_b != "none" {
+            yt_dlp_combined.push(format!("--cookies-from-browser {}", cookies_b));
+        }
+        if !extra_cleaned.is_empty() {
+            yt_dlp_combined.push(extra_cleaned);
+        }
+        if !yt_dlp_combined.is_empty() {
+            spot_args.push("--yt-dlp-args".to_string());
+            spot_args.push(yt_dlp_combined.join(" "));
+        }
+        if !extra_spotdl.trim().is_empty() {
+            for token in extra_spotdl.split_whitespace() {
+                spot_args.push(token.to_string());
+            }
+        }
+        (spotdl_exe_path(), spot_args, "spotDL (Spotify)")
+    } else if is_http_url {
+        // 2) Lien direct (YouTube, SoundCloud, etc.) -> Utiliser yt-dlp directement
         let yt_bin = yt_dlp_exe_path();
         let bin = if yt_bin.exists() {
             yt_bin
@@ -455,11 +486,11 @@ pub async fn run_download(
                 }
             }
 
-            yt_args.push(url.clone());
+            yt_args.push(url_trim.clone());
             (bin, yt_args, "yt-dlp (Téléchargement direct)")
         } else {
             let mut spot_args: Vec<String> = Vec::new();
-            spot_args.push(url.clone());
+            spot_args.push(url_trim.clone());
             spot_args.push("--threads".to_string());
             spot_args.push(threads.to_string());
             if !cookies_b.is_empty() && cookies_b != "none" {
@@ -469,33 +500,63 @@ pub async fn run_download(
             (spotdl_exe_path(), spot_args, "spotDL")
         }
     } else {
-        // Lien Spotify -> Utiliser spotDL avec métadonnées Spotify
-        let mut spot_args: Vec<String> = Vec::new();
-        spot_args.push(url.clone());
-        spot_args.push("--threads".to_string());
-        spot_args.push(threads.to_string());
-        spot_args.push("--audio".to_string());
-        for s in audio_sources {
-            spot_args.push(s);
-        }
-
-        let mut yt_dlp_combined = Vec::new();
-        if !cookies_b.is_empty() && cookies_b != "none" {
-            yt_dlp_combined.push(format!("--cookies-from-browser {}", cookies_b));
-        }
-        if !extra_cleaned.is_empty() {
-            yt_dlp_combined.push(extra_cleaned);
-        }
-        if !yt_dlp_combined.is_empty() {
-            spot_args.push("--yt-dlp-args".to_string());
-            spot_args.push(yt_dlp_combined.join(" "));
-        }
-        if !extra_spotdl.trim().is_empty() {
-            for token in extra_spotdl.split_whitespace() {
-                spot_args.push(token.to_string());
+        // 3) Recherche par mot-clé / Titre + Artiste (ex: sélection depuis Deezer/iTunes)
+        let spot_bin = spotdl_exe_path();
+        if spot_bin.exists() {
+            let mut spot_args: Vec<String> = Vec::new();
+            spot_args.push(url_trim.clone());
+            spot_args.push("--threads".to_string());
+            spot_args.push(threads.to_string());
+            spot_args.push("--audio".to_string());
+            for s in audio_sources {
+                spot_args.push(s);
             }
+
+            let mut yt_dlp_combined = Vec::new();
+            if !cookies_b.is_empty() && cookies_b != "none" {
+                yt_dlp_combined.push(format!("--cookies-from-browser {}", cookies_b));
+            }
+            if !extra_cleaned.is_empty() {
+                yt_dlp_combined.push(extra_cleaned);
+            }
+            if !yt_dlp_combined.is_empty() {
+                spot_args.push("--yt-dlp-args".to_string());
+                spot_args.push(yt_dlp_combined.join(" "));
+            }
+            if !extra_spotdl.trim().is_empty() {
+                for token in extra_spotdl.split_whitespace() {
+                    spot_args.push(token.to_string());
+                }
+            }
+            (spot_bin, spot_args, "spotDL (Recherche & Métadonnées)")
+        } else {
+            let yt_bin = yt_dlp_exe_path();
+            let mut yt_args: Vec<String> = Vec::new();
+            yt_args.push("-x".to_string());
+            yt_args.push("--audio-format".to_string());
+            yt_args.push("mp3".to_string());
+            yt_args.push("--audio-quality".to_string());
+            yt_args.push("0".to_string());
+            yt_args.push("--embed-thumbnail".to_string());
+            yt_args.push("--add-metadata".to_string());
+            yt_args.push("-o".to_string());
+            yt_args.push("%(title)s.%(ext)s".to_string());
+
+            if !cookies_b.is_empty() && cookies_b != "none" {
+                yt_args.push("--cookies-from-browser".to_string());
+                yt_args.push(cookies_b.to_string());
+            }
+
+            if !extra_cleaned.is_empty() {
+                for token in extra_cleaned.split_whitespace() {
+                    yt_args.push(token.to_string());
+                }
+            }
+
+            let search_target = format!("ytsearch1:{}", url_trim);
+            yt_args.push(search_target);
+            (yt_bin, yt_args, "yt-dlp (Recherche YouTube)")
         }
-        (spotdl_exe_path(), spot_args, "spotDL (Spotify)")
     };
 
     if !exe_bin.exists() {
@@ -522,6 +583,8 @@ pub async fn run_download(
         .args(&args)
         .current_dir(&output_dir)
         .env("PATH", new_path)
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

@@ -125,9 +125,21 @@ export async function enrichArtistPhotosInBatch(onDone?: () => Promise<void>) {
   if (onDone) await onDone();
 }
 
-export function setupArtistModalEvents(onSaved?: () => Promise<void>) {
+let onDeleteArtistCallback: ((artist: ArtistSummary) => Promise<void>) | null = null;
+
+export function setupArtistModalEvents(onSaved?: () => Promise<void>, onDeleteArtist?: (artist: ArtistSummary) => Promise<void>) {
+  if (onDeleteArtist) onDeleteArtistCallback = onDeleteArtist;
+
   $("artist-modal-close")?.addEventListener("click", closeArtistModal);
   $("artist-modal-cancel")?.addEventListener("click", closeArtistModal);
+
+  $("artist-modal-delete")?.addEventListener("click", async () => {
+    if (editingArtistSummary && onDeleteArtistCallback) {
+      const artistToDelete = editingArtistSummary;
+      closeArtistModal();
+      await onDeleteArtistCallback(artistToDelete);
+    }
+  });
 
   $("btn-artist-web-photo")?.addEventListener("click", async () => {
     if (!editingArtistSummary) return;

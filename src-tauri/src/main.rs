@@ -348,6 +348,7 @@ fn main() {
             // ---- Commandes HTTP (API externes → Rust) ----
             commands::fetch_image_as_base64,
             commands::fetch_online_track_metadata,
+            commands::search_online_tracks,
             commands::fetch_artist_online_metadata,
             commands::fetch_artist_web_photo,
             commands::fetch_band_members_and_bio,
@@ -360,6 +361,8 @@ fn main() {
             commands::clear_debug_logs,
             commands::register_listen_event,
             commands::get_or_create_smart_session,
+            commands::set_smart_shuffle_playlist,
+            commands::set_smart_shuffle_active,
             commands::get_next_smart_track,
             commands::update_smart_session,
             commands::submit_algo_feedback,
@@ -378,6 +381,13 @@ fn main() {
             commands::delete_radio,
             commands::check_radio_online,
             commands::resolve_video_audio_stream,
+            commands::get_channel_live_streams,
+            commands::fetch_radio_online_metadata,
+            commands::remove_from_playlist,
+            commands::delete_track,
+            commands::delete_artist,
+            commands::delete_album,
+            commands::delete_genre,
         ])
 
         .run(tauri::generate_context!())

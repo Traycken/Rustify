@@ -54,6 +54,9 @@
           <button class="nav-item" data-view="tempo">
             <i class="fa-solid fa-gauge-high nav-icon"></i> Tempo
           </button>
+          <button class="nav-item" data-view="mood" id="nav-mood">
+            <i class="fa-solid fa-face-smile nav-icon"></i> Humeur
+          </button>
           <button class="nav-item" data-view="playlists">
             <i class="fa-solid fa-list-ul nav-icon"></i> Playlists
           </button>
@@ -136,6 +139,22 @@
             </div>
           </div>
 
+          <div id="playlist-header" class="artist-banner playlist-banner" hidden>
+            <div class="playlist-avatar-box">
+              <i class="fa-solid fa-list-ul"></i>
+            </div>
+            <div class="artist-banner-info">
+              <div class="playlist-badge">Playlist</div>
+              <h2 id="playlist-banner-name">Nom de la playlist</h2>
+              <div class="artist-banner-sub"><span id="playlist-banner-count">0 morceau(x)</span></div>
+              <div class="playlist-banner-actions">
+                <button id="btn-playlist-play-all" class="btn-primary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-play"></i> Tout lire</button>
+                <button id="btn-playlist-smart-shuffle" class="btn-secondary btn-smart-shuffle-playlist" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-wand-magic-sparkles"></i> Lancer Smart Shuffle</button>
+                <button id="btn-playlist-delete" class="btn-secondary btn-delete-playlist" style="padding: 6px 14px; font-size: 13px; color: #ff6b6b; border-color: rgba(255,107,107,0.35);"><i class="fa-solid fa-trash-can"></i> Supprimer la playlist</button>
+              </div>
+            </div>
+          </div>
+
           <table class="track-table">
             <thead>
               <tr>
@@ -180,9 +199,15 @@
 
         <!-- ── 3. Onglet Favoris ⭐ ─────────────────────────────────────── -->
         <div id="view-favorites" class="view" hidden>
+          <!-- Section Titres (Favoris, Likes, Dislikes) -->
           <div class="artists-section">
-            <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Titres Favoris (Étoiles)</h2>
+            <div class="artists-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Titres & Interactions</h2>
+              <div class="fav-track-filters" style="display: flex; gap: 8px;">
+                <button id="btn-fav-filter-stars" class="btn-primary active-subtab" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> ⭐ Favoris</button>
+                <button id="btn-fav-filter-likes" class="btn-secondary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-thumbs-up" style="color: #2ed573;"></i> 👍 Aimés</button>
+                <button id="btn-fav-filter-dislikes" class="btn-secondary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-thumbs-down" style="color: #ff4757;"></i> 👎 Non aimés</button>
+              </div>
             </div>
             <table class="track-table">
               <thead>
@@ -200,20 +225,40 @@
             <p id="empty-fav-tracks" class="empty-state" hidden>Aucun titre favori ⭐ pour le moment.</p>
           </div>
 
+          <!-- Section Albums Favoris -->
           <div class="artists-section" style="margin-top: 28px;">
             <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Albums Favoris</h2>
+              <h2 class="artists-section-title"><i class="fa-solid fa-compact-disc" style="color: #f1c40f;"></i> Albums Favoris</h2>
             </div>
             <div id="grid-fav-albums" class="grid-view"></div>
             <p id="empty-fav-albums" class="empty-state" hidden>Aucun album favori pour le moment.</p>
           </div>
 
+          <!-- Section Artistes Solo Favoris -->
           <div class="artists-section" style="margin-top: 28px;">
             <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> Artistes & Groupes Favoris</h2>
+              <h2 class="artists-section-title"><i class="fa-solid fa-user" style="color: #1db954;"></i> Artistes Solo Favoris</h2>
             </div>
-            <div id="grid-fav-artists" class="grid-view"></div>
-            <p id="empty-fav-artists" class="empty-state" hidden>Aucun artiste favori pour le moment.</p>
+            <div id="grid-fav-solo-artists" class="grid-view"></div>
+            <p id="empty-fav-solo-artists" class="empty-state" hidden>Aucun artiste solo favori pour le moment.</p>
+          </div>
+
+          <!-- Section Groupes Favoris -->
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-users" style="color: #3498db;"></i> Groupes & Bands Favoris</h2>
+            </div>
+            <div id="grid-fav-group-artists" class="grid-view"></div>
+            <p id="empty-fav-group-artists" class="empty-state" hidden>Aucun groupe favori pour le moment.</p>
+          </div>
+
+          <!-- Section Playlists Créées -->
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-list-ul" style="color: #e67e22;"></i> Playlists Créées</h2>
+            </div>
+            <div id="grid-fav-playlists" class="grid-view"></div>
+            <p id="empty-fav-playlists" class="empty-state" hidden>Aucune playlist personnalisée créée pour le moment.</p>
           </div>
         </div>
 
@@ -289,14 +334,73 @@
           <div id="grid-tempo" class="grid-view"></div>
         </div>
 
+        <!-- ── 8b. Onglet Humeur ────────────────────────────────────────── -->
+        <div id="view-mood" class="view" hidden>
+          <div class="mood-header-card">
+            <h2 class="mood-section-title"><i class="fa-solid fa-face-smile" style="color: var(--accent, #1db954);"></i> Choisissez votre Humeur</h2>
+            <p class="settings-desc" style="margin-bottom: 16px;">
+              Sélectionnez votre état d'esprit actuel. L'application vous proposera des orientations de playlists adaptées et ajustera la génération continue de la musique au fil de vos écoutes.
+            </p>
+            <div id="grid-mood-selector" class="grid-mood-selector"></div>
+          </div>
+
+          <div id="mood-tempo-advice" class="mood-tempo-advice">
+            <div class="advice-icon"><i class="fa-solid fa-lightbulb"></i></div>
+            <div class="advice-text">Conseil Tempo...</div>
+          </div>
+
+          <div class="mood-playlists-section" style="margin-top: 24px;">
+            <h2 class="mood-section-title" style="margin-bottom: 14px;"><i class="fa-solid fa-compact-disc" style="color: var(--accent, #1db954);"></i> Playlists recommandées pour votre humeur</h2>
+            <div id="grid-mood-playlists" class="grid-mood-playlists"></div>
+          </div>
+
+          <div class="mood-tracks-section" style="margin-top: 28px;">
+            <div class="mood-tracks-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h2 class="mood-section-title"><i class="fa-solid fa-list-ol" style="color: var(--accent, #1db954);"></i> Morceaux sélectionnés : <span id="mood-active-playlist-title" style="font-size: 1.1rem; color: #a0a0a0; margin-left: 8px;">—</span></h2>
+              <button id="btn-start-mood-playback" class="btn-primary"><i class="fa-solid fa-play"></i> Lancer la lecture orientée</button>
+            </div>
+            <table class="track-table">
+              <thead>
+                <tr>
+                  <th class="col-idx">#</th>
+                  <th class="col-cover">Pochette</th>
+                  <th>Titre</th>
+                  <th>Artiste</th>
+                  <th>Album</th>
+                  <th style="text-align: center; width: 110px;">Tempo</th>
+                  <th class="col-time">Durée</th>
+                </tr>
+              </thead>
+              <tbody id="mood-tracks-tbody"></tbody>
+            </table>
+            <p id="empty-mood-tracks" class="empty-state" hidden>Aucun morceau dans votre bibliothèque ne correspond à ce filtre d'humeur.</p>
+          </div>
+        </div>
+
         <!-- ── 9. Onglet Playlists ──────────────────────────────────────── -->
         <div id="view-playlists" class="view" hidden>
           <div class="recents-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <p class="settings-desc" style="margin-bottom: 0;">Créez et gérez vos listes de lecture personnalisées.</p>
+            <p class="settings-desc" style="margin-bottom: 0;">Créez et gérez vos listes de lecture personnalisées ou accédez aux playlists système auto-générées.</p>
             <button id="btn-new-playlist-page" class="btn-primary"><i class="fa-solid fa-plus"></i> Nouvelle Playlist</button>
           </div>
-          <div id="grid-playlists" class="grid-view"></div>
-          <p id="empty-playlists" class="empty-state" hidden>Aucune playlist créée. Cliquez sur "+ Nouvelle Playlist" pour commencer.</p>
+
+          <!-- Section 1 : Playlists Systèmes -->
+          <div class="artists-section">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-bolt" style="color: #ff6b6b;"></i> Playlists Systèmes (Auto-remplies)</h2>
+            </div>
+            <div id="grid-system-playlists" class="grid-view"></div>
+            <p id="empty-system-playlists" class="empty-state" hidden>Aucune playlist système disponible.</p>
+          </div>
+
+          <!-- Section 2 : Playlists Créées -->
+          <div class="artists-section" style="margin-top: 28px;">
+            <div class="artists-section-header">
+              <h2 class="artists-section-title"><i class="fa-solid fa-list-ul" style="color: var(--accent, #1db954);"></i> Playlists Créées (Personnalisées)</h2>
+            </div>
+            <div id="grid-playlists" class="grid-view"></div>
+            <p id="empty-playlists" class="empty-state" hidden>Aucune playlist personnalisée créée. Cliquez sur "+ Nouvelle Playlist" pour commencer.</p>
+          </div>
         </div>
 
         <!-- ── Onglet File d'attente ─────────────────────────────────────── -->
@@ -373,8 +477,11 @@
 
             <div class="downloader-input-box">
               <div class="downloader-input-wrapper">
-                <i class="fa-solid fa-link input-icon"></i>
-                <input type="text" id="downloader-url-input" placeholder="https://open.spotify.com/playlist/... ou https://www.youtube.com/watch?v=..." />
+                <i class="fa-solid fa-magnifying-glass input-icon"></i>
+                <input type="text" id="downloader-url-input" placeholder="Titre de musique (ex: Daft Punk Get Lucky) ou URL Spotify / YouTube..." />
+                <button id="btn-search-download" class="btn-primary" title="Rechercher une musique en ligne">
+                  <i class="fa-solid fa-magnifying-glass"></i> Rechercher
+                </button>
                 <button id="btn-paste-download" class="btn-secondary" title="Coller depuis le presse-papier">
                   <i class="fa-solid fa-paste"></i> Coller
                 </button>
@@ -724,7 +831,33 @@
         </div>
       </div>
 
-      <div class="transport">
+      <div class="transport" style="position: relative;">
+        <!-- Popover Paroles (Lyrics) Style Sous-Titres de Film centré au-dessus de transport-deck -->
+        <div id="lyrics-popover" class="lyrics-popover" hidden>
+          <div class="lyrics-popover-header">
+            <div class="lyrics-popover-track-info">
+              <img id="lyrics-popover-cover" class="lyrics-popover-cover" src="" alt="Pochette" />
+              <div class="lyrics-popover-meta">
+                <span id="lyrics-popover-title" class="lyrics-popover-title">—</span>
+                <span style="opacity: 0.5;">•</span>
+                <span id="lyrics-popover-artist" class="lyrics-popover-artist">—</span>
+              </div>
+            </div>
+            <div class="lyrics-popover-actions">
+              <div id="lyrics-sync-controls" class="lyrics-sync-controls" style="display: inline-flex; align-items: center; gap: 2px; background: rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 1px 4px; margin-right: 4px;" hidden>
+                <button id="btn-lyrics-sync-minus" class="popover-btn-icon" title="Retarder les paroles (-100 ms)" style="padding: 1px 4px; font-size: 11px;"><i class="fa-solid fa-minus"></i></button>
+                <span id="lyrics-sync-offset-badge" class="sync-offset-badge" style="font-size: 11px; font-family: var(--font-mono, monospace); font-weight: 600; color: var(--accent, #1db954); padding: 0 4px; cursor: pointer;" title="Double-cliquez pour réinitialiser">0 ms</span>
+                <button id="btn-lyrics-sync-plus" class="popover-btn-icon" title="Avancer les paroles (+100 ms)" style="padding: 1px 4px; font-size: 11px;"><i class="fa-solid fa-plus"></i></button>
+              </div>
+              <button id="lyrics-popover-enrich" class="popover-btn-icon" title="Rechercher les paroles (LRCLIB)"><i class="fa-solid fa-cloud-arrow-down"></i></button>
+              <button id="lyrics-popover-close" class="popover-btn-icon" title="Fermer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+          </div>
+          <div id="lyrics-popover-body" class="lyrics-popover-body">
+            <!-- Sous-titres des paroles -->
+          </div>
+        </div>
+
         <div class="transport-deck">
           <div class="transport-buttons">
             <div class="algo-buttons-slot">
@@ -761,6 +894,11 @@
       </div>
 
       <div class="volume-block">
+        <button id="btn-show-lyrics" class="icon-btn lyrics-btn" title="Afficher les Paroles (Lyrics)" style="display: inline-flex; align-items: center; justify-content: center;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M13.426 2.574a2.831 2.831 0 0 0-4.797 1.55l3.247 3.247a2.831 2.831 0 0 0 1.55-4.797M10.5 8.118l-2.619-2.62L4.74 9.075 2.065 12.12a1.287 1.287 0 0 0 1.816 1.816l3.06-2.688 3.56-3.129zM7.12 4.094a4.331 4.331 0 1 1 4.786 4.786l-3.974 3.493-3.06 2.689a2.787 2.787 0 0 1-3.933-3.933l2.676-3.045z"></path>
+          </svg>
+        </button>
         <div class="device-picker-wrapper">
           <button id="btn-audio-device" class="icon-btn device-btn" title="Périphérique de sortie audio">
             <i class="fa-solid fa-headphones"></i>
@@ -804,15 +942,16 @@
           <svg class="overlay-progress-ring" viewBox="0 0 100 100">
             <circle class="ring-bg" cx="50" cy="50" r="46" />
             <circle id="overlay-ring-fill" class="ring-fill" cx="50" cy="50" r="46" />
+            <circle id="overlay-ring-hit" class="ring-hit" cx="50" cy="50" r="46" />
           </svg>
         </div>
 
         <div class="overlay-hud">
           <div id="overlay-time-remaining" class="overlay-time-pill" data-tauri-drag-region>-0:00</div>
 
-          <button id="overlay-btn-clickthrough" class="overlay-hud-btn arc-btn-1" title="Clics traversants (Verrou)"><i class="fa-solid fa-lock-open"></i></button>
-          <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-2" title="Volume"><i class="fa-solid fa-volume-high"></i></button>
-          <button id="overlay-btn-fav" class="overlay-hud-btn arc-btn-3" title="Favori"><i class="fa-regular fa-heart"></i></button>
+          <button id="overlay-btn-volume" class="overlay-hud-btn arc-btn-1" title="Volume"><i class="fa-solid fa-volume-high"></i></button>
+          <button id="overlay-btn-ecstasy" class="overlay-hud-btn arc-btn-2" title="Extase 💖"><i class="fa-regular fa-heart"></i></button>
+          <button id="overlay-btn-fav" class="overlay-hud-btn arc-btn-3" title="Favori ⭐"><i class="fa-regular fa-star"></i></button>
           <button id="overlay-btn-close" class="overlay-hud-btn arc-btn-4 close" title="Fermer l'Overlay"><i class="fa-solid fa-xmark"></i></button>
 
           <div id="overlay-volume-popover" class="overlay-volume-popover" hidden>
@@ -861,8 +1000,15 @@
       <div class="menu-item" id="ctx-fetch-artist-photo"><span class="menu-icon"><i class="fa-solid fa-image"></i></span> Mettre à jour la photo HD d'artiste</div>
       <div class="menu-item" id="ctx-toggle-artist-type"><span class="menu-icon"><i class="fa-solid fa-arrows-rotate"></i></span> Basculer Solo / Groupe</div>
       <div class="menu-item" id="ctx-rename-genre"><span class="menu-icon"><i class="fa-solid fa-pen-to-square"></i></span> Renommer le genre</div>
+      <div class="menu-item" id="ctx-delete-genre" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer le genre</div>
+      <div class="menu-item" id="ctx-delete-album" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer l'album</div>
+      <div class="menu-item" id="ctx-delete-artist" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer l'artiste / groupe</div>
+      <div class="menu-item" id="ctx-remove-playlist" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-circle-minus"></i></span> Retirer de cette playlist</div>
+      <div class="menu-item" id="ctx-smart-shuffle-playlist"><span class="menu-icon"><i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent);"></i></span> Lancer le Smart Shuffle</div>
       <div class="menu-item" id="ctx-rename-playlist"><span class="menu-icon"><i class="fa-solid fa-pen-to-square"></i></span> Renommer la playlist</div>
       <div class="menu-item" id="ctx-delete-playlist" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer la playlist</div>
+      <div class="menu-item" id="ctx-delete-track" style="color: #ff6b6b;"><span class="menu-icon"><i class="fa-solid fa-trash"></i></span> Supprimer le morceau</div>
+      <div class="menu-item" id="ctx-show-lyrics"><span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="vertical-align: middle;"><path d="M13.426 2.574a2.831 2.831 0 0 0-4.797 1.55l3.247 3.247a2.831 2.831 0 0 0 1.55-4.797M10.5 8.118l-2.619-2.62L4.74 9.075 2.065 12.12a1.287 1.287 0 0 0 1.816 1.816l3.06-2.688 3.56-3.129zM7.12 4.094a4.331 4.331 0 1 1 4.786 4.786l-3.974 3.493-3.06 2.689a2.787 2.787 0 0 1-3.933-3.933l2.676-3.045z"></path></svg></span> Voir les Paroles (Lyrics)</div>
       <div class="menu-item" id="ctx-info"><span class="menu-icon"><i class="fa-solid fa-circle-info"></i></span> Informations & Métadonnées</div>
     </div>
 
@@ -962,6 +1108,7 @@
         </div>
 
         <div class="modal-footer">
+          <button id="modal-btn-delete" class="btn-secondary" style="margin-right: auto; color: #ff6b6b; border-color: rgba(255,107,107,0.4);"><i class="fa-solid fa-trash"></i> Supprimer le morceau</button>
           <button id="modal-btn-cancel" class="btn-secondary">Annuler</button>
           <button id="modal-btn-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
         </div>
@@ -1028,6 +1175,7 @@
         </div>
 
         <div class="modal-footer">
+          <button id="album-modal-delete" class="btn-secondary" style="margin-right: auto; color: #ff6b6b; border-color: rgba(255,107,107,0.4);"><i class="fa-solid fa-trash"></i> Supprimer l'album</button>
           <button id="album-modal-cancel" class="btn-secondary">Annuler</button>
           <button id="album-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer l'album</button>
         </div>
@@ -1068,6 +1216,7 @@
           </div>
         </div>
         <div class="modal-footer">
+          <button id="artist-modal-delete" class="btn-secondary" style="margin-right: auto; color: #ff6b6b; border-color: rgba(255,107,107,0.4);"><i class="fa-solid fa-trash"></i> Supprimer l'artiste/groupe</button>
           <button id="artist-modal-cancel" class="btn-secondary">Annuler</button>
           <button id="artist-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer l'artiste</button>
         </div>
@@ -1089,6 +1238,7 @@
           <p class="settings-desc" style="margin-top: 8px;">Ce nom sera mis à jour sur l'ensemble des morceaux associés de votre bibliothèque.</p>
         </div>
         <div class="modal-footer">
+          <button id="genre-modal-delete" class="btn-secondary" style="margin-right: auto; color: #ff6b6b; border-color: rgba(255,107,107,0.4);"><i class="fa-solid fa-trash"></i> Supprimer le genre</button>
           <button id="genre-modal-cancel" class="btn-secondary">Annuler</button>
           <button id="genre-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
         </div>
@@ -1121,8 +1271,13 @@
             <input type="text" id="radio-input-name" placeholder="ex: FIP Rock, NRJ, Radio Nova..." />
           </div>
           <div class="form-group">
-            <label for="radio-input-url">Lien streaming Audio ou Vidéo (URL) *</label>
-            <input type="text" id="radio-input-url" placeholder="https://stream.radio.com/live.mp3 ou URL YouTube live" />
+            <label for="radio-input-url" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Lien streaming Audio, YouTube ou Twitch (URL / @profil) *</span>
+              <button type="button" id="btn-fetch-radio-metadata" class="btn-secondary btn-small" style="font-size: 11px; padding: 2px 8px; color: var(--accent, #1db954); border-color: rgba(29, 185, 84, 0.4);">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-détecter les infos
+              </button>
+            </label>
+            <input type="text" id="radio-input-url" placeholder="https://stream.radio.com/live.mp3, YouTube (@aypierre) ou Twitch (twitch.tv/profil)" />
           </div>
           <div class="form-group-row" style="display: flex; gap: 12px;">
             <div class="form-group" style="flex: 1;">
@@ -1141,9 +1296,35 @@
             </label>
           </div>
         </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <button id="radio-modal-delete" type="button" class="btn-secondary btn-danger" style="margin-right: auto;" hidden>
+            <i class="fa-solid fa-trash"></i> Supprimer la radio
+          </button>
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            <button id="radio-modal-cancel" type="button" class="btn-secondary">Annuler</button>
+            <button id="radio-modal-save" type="button" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer la Radio</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale Choix Multi-Live Radio -->
+    <div id="radio-lives-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 540px;">
+        <div class="modal-header">
+          <h2 id="radio-lives-modal-title"><i class="fa-solid fa-tower-cell" style="color: var(--accent, #1db954);"></i> Flux en direct de la chaîne</h2>
+          <button id="radio-lives-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="radio-lives-modal-desc" class="settings-desc" style="margin-bottom: 14px;">
+            Plusieurs direct(s) ont été détectés sur cette chaîne. Cliquez sur un flux pour lancer sa lecture :
+          </p>
+          <div id="radio-lives-list" class="radio-lives-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto;">
+            <!-- Liste dynamique des direct(s) -->
+          </div>
+        </div>
         <div class="modal-footer">
-          <button id="radio-modal-cancel" class="btn-secondary">Annuler</button>
-          <button id="radio-modal-save" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Enregistrer la Radio</button>
+          <button id="radio-lives-modal-cancel" class="btn-secondary">Fermer</button>
         </div>
       </div>
     </div>
@@ -1164,6 +1345,53 @@
         <div class="modal-footer">
           <button id="app-dialog-cancel" class="btn-secondary">Annuler</button>
           <button id="app-dialog-ok" class="btn-primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale de Confirmation de Suppression -->
+    <div id="delete-confirm-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 440px;">
+        <div class="modal-header">
+          <h2 id="delete-modal-title" style="color: #ff6b6b;"><i class="fa-solid fa-trash"></i> Suppression</h2>
+          <button id="delete-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="delete-modal-message" class="settings-desc" style="font-size: 1rem; color: #fff; margin-bottom: 15px; white-space: pre-line;"></p>
+          <div style="background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3); border-radius: 8px; padding: 12px; margin-top: 10px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: #eee; font-weight: 500; user-select: none;">
+              <input type="checkbox" id="delete-modal-file-checkbox" style="width: 18px; height: 18px; accent-color: #ff4757; cursor: pointer;" />
+              <span>Supprimer également le(s) fichier(s) physique(s) sur le disque</span>
+            </label>
+            <p id="delete-modal-warning" style="font-size: 0.82rem; color: #ff6b6b; margin-top: 6px; margin-left: 28px; display: none;">
+              ⚠️ Attention : Le(s) fichier(s) son sera(ont) définitivement supprimé(s) de votre ordinateur.
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer" style="gap: 10px;">
+          <button id="delete-modal-cancel" class="btn-secondary">Annuler</button>
+          <button id="delete-modal-confirm" class="btn-primary" style="background: #ff4757; border-color: #ff4757;"><i class="fa-solid fa-trash"></i> Supprimer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modale de Sélection des Morceaux Trouvés pour Téléchargement -->
+    <div id="downloader-search-modal" class="modal-overlay" hidden>
+      <div class="modal-content" style="max-width: 580px;">
+        <div class="modal-header">
+          <h2><i class="fa-solid fa-music" style="color: var(--accent);"></i> Résultats de la recherche</h2>
+          <button id="downloader-search-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="settings-desc" style="margin-bottom: 12px;">
+            Sélectionnez la musique que vous souhaitez télécharger parmi les propositions ci-dessous :
+          </p>
+          <div id="downloader-search-results-list" class="downloader-search-results-list">
+            <!-- Liste dynamique injectée via TypeScript -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="downloader-search-modal-cancel" class="btn-secondary">Annuler</button>
         </div>
       </div>
     </div>

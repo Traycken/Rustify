@@ -35,9 +35,16 @@ export interface ContextMenuCallbacks {
   filterByGenre: (genreName: string) => void;
   renamePlaylist: (playlistId: string, oldName: string) => void;
   deletePlaylist: (playlistId: string) => void;
+  deleteTrack: (track: Track) => void;
+  removeFromPlaylist: (playlistId: string, track: Track) => void;
+  deleteArtist: (artist: ArtistSummary) => void;
+  deleteAlbum: (album: AlbumSummary) => void;
+  deleteGenre: (genreName: string, tracksCount: number) => void;
   openTrackInfoModal: (track: Track) => void;
+  openLyricsModal: (track: Track) => void;
   loadPlaylists: () => void;
   isArtistGroup: (artist: ArtistSummary) => boolean;
+  startSmartShuffleForPlaylist: (playlistId: string, playlistName?: string) => void;
 }
 
 let activeCtxTarget: ContextTarget | null = null;
@@ -81,10 +88,18 @@ export async function openGenericContextMenu(e: MouseEvent, target: ContextTarge
   const ctxFetchArtistPhoto = $("ctx-fetch-artist-photo");
   const ctxToggleArtistType = $("ctx-toggle-artist-type");
   const ctxRenameGenre = $("ctx-rename-genre");
+  const ctxSmartShufflePlaylist = $("ctx-smart-shuffle-playlist");
   const ctxRenamePlaylist = $("ctx-rename-playlist");
   const ctxDeletePlaylist = $("ctx-delete-playlist");
+  const ctxDeleteTrack = $("ctx-delete-track");
+  const ctxRemovePlaylist = $("ctx-remove-playlist");
+  const ctxDeleteArtist = $("ctx-delete-artist");
+  const ctxDeleteAlbum = $("ctx-delete-album");
+  const ctxDeleteGenre = $("ctx-delete-genre");
+  const ctxShowLyrics = $("ctx-show-lyrics");
   const ctxInfo = $("ctx-info");
 
+  if (ctxShowLyrics) ctxShowLyrics.hidden = target.type !== "track";
   if (ctxPlay) ctxPlay.hidden = false;
   if (ctxAddQueue) ctxAddQueue.hidden = false;
   if (ctxDiv1) ctxDiv1.hidden = false;
@@ -102,8 +117,18 @@ export async function openGenericContextMenu(e: MouseEvent, target: ContextTarge
     }
   }
   const isSystemPlaylist = target.type === "playlist" && (target.playlistId === "system_liked_tracks" || target.playlistId === "liked");
+  if (ctxSmartShufflePlaylist) ctxSmartShufflePlaylist.hidden = target.type !== "playlist";
   if (ctxRenamePlaylist) ctxRenamePlaylist.hidden = target.type !== "playlist" || isSystemPlaylist;
   if (ctxDeletePlaylist) ctxDeletePlaylist.hidden = target.type !== "playlist" || isSystemPlaylist;
+
+  if (ctxDeleteTrack) ctxDeleteTrack.hidden = target.type !== "track";
+  if (ctxRemovePlaylist) {
+    const isCustomPlaylist = target.type === "track" && !!target.currentPlaylistId && target.currentPlaylistId !== "system_liked_tracks" && target.currentPlaylistId !== "liked";
+    ctxRemovePlaylist.hidden = !isCustomPlaylist;
+  }
+  if (ctxDeleteArtist) ctxDeleteArtist.hidden = target.type !== "artist";
+  if (ctxDeleteAlbum) ctxDeleteAlbum.hidden = target.type !== "album";
+  if (ctxDeleteGenre) ctxDeleteGenre.hidden = target.type !== "genre";
 
   const ctxToggleEcstasy = $("ctx-toggle-ecstasy");
   if (ctxToggleEcstasy) {
@@ -309,6 +334,13 @@ export function initContextMenuGlobalEvents() {
     hideContextMenu();
   });
 
+  $("ctx-smart-shuffle-playlist")?.addEventListener("click", () => {
+    if (activeCtxTarget?.playlistId && ctxCallbacks.startSmartShuffleForPlaylist) {
+      ctxCallbacks.startSmartShuffleForPlaylist(activeCtxTarget.playlistId, activeCtxTarget.playlistName);
+    }
+    hideContextMenu();
+  });
+
   $("ctx-rename-playlist")?.addEventListener("click", () => {
     if (activeCtxTarget?.playlistId && activeCtxTarget.playlistName && ctxCallbacks.renamePlaylist) {
       ctxCallbacks.renamePlaylist(activeCtxTarget.playlistId, activeCtxTarget.playlistName);
@@ -319,6 +351,48 @@ export function initContextMenuGlobalEvents() {
   $("ctx-delete-playlist")?.addEventListener("click", () => {
     if (activeCtxTarget?.playlistId && ctxCallbacks.deletePlaylist) {
       ctxCallbacks.deletePlaylist(activeCtxTarget.playlistId);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-delete-track")?.addEventListener("click", () => {
+    if (activeCtxTarget?.track && ctxCallbacks.deleteTrack) {
+      ctxCallbacks.deleteTrack(activeCtxTarget.track);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-remove-playlist")?.addEventListener("click", () => {
+    if (activeCtxTarget?.track && activeCtxTarget.currentPlaylistId && ctxCallbacks.removeFromPlaylist) {
+      ctxCallbacks.removeFromPlaylist(activeCtxTarget.currentPlaylistId, activeCtxTarget.track);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-delete-artist")?.addEventListener("click", () => {
+    if (activeCtxTarget?.artist && ctxCallbacks.deleteArtist) {
+      ctxCallbacks.deleteArtist(activeCtxTarget.artist);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-delete-album")?.addEventListener("click", () => {
+    if (activeCtxTarget?.album && ctxCallbacks.deleteAlbum) {
+      ctxCallbacks.deleteAlbum(activeCtxTarget.album);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-delete-genre")?.addEventListener("click", () => {
+    if (activeCtxTarget?.genreName && ctxCallbacks.deleteGenre) {
+      ctxCallbacks.deleteGenre(activeCtxTarget.genreName, activeCtxTarget.genreTracks?.length || 0);
+    }
+    hideContextMenu();
+  });
+
+  $("ctx-show-lyrics")?.addEventListener("click", () => {
+    if (activeCtxTarget?.track && ctxCallbacks.openLyricsModal) {
+      ctxCallbacks.openLyricsModal(activeCtxTarget.track);
     }
     hideContextMenu();
   });

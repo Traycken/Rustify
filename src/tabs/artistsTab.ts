@@ -24,7 +24,7 @@ import { escapeHtml, formatMbDate, formatFanCount, calculateAgeOrDuration } from
 
 export interface ArtistsTabCallbacks {
   switchView: (view: string) => void;
-  renderTracks: (tracks: Track[]) => void;
+  renderTracks: (tracks: Track[], playlistId?: string) => void;
   pushNavState: (state: NavState) => void;
   openArtistModal: (artist: ArtistSummary) => void;
   openGenericContextMenu: (e: MouseEvent, target: ContextTarget) => void;

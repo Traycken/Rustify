@@ -47,16 +47,25 @@ import {
   getCoverDataUrl,
   currentQueue,
   setCurrentQueue,
+  activeMoodPlaylistOption,
+  activeSmartShufflePlaylistId,
+  activeSmartShufflePlaylistName,
+  setActiveSmartShufflePlaylistId,
+  setActiveSmartShufflePlaylistName,
 } from "../state";
 import type { PlayerState, Track, LastPlayerState, SmartSession, AlgoFeedbackState, Radio } from "../types";
 import { fmtTime, updateSliderTrack } from "../utils/formatting";
 import { updateOverlayUI } from "./overlay";
+import { getOrientedMoodTrack } from "../tabs/moodTab";
+import { updateLyricsButtonsState, updateLyricsSyncHighlight } from "../modals/lyricsModal";
+import { showToast } from "../utils/toast";
 
 export interface PlayerEngineCallbacks {
   renderAudioDeviceUI: () => void;
   onStateApplied: () => void;
-  activeRadio: Radio | null;
-  radioAudioEl: HTMLAudioElement | null;
+  getActiveRadio: () => Radio | null;
+  getRadioAudioEl: () => HTMLAudioElement | null;
+  stopRadio: () => void;
   activeRadioPlaying: boolean;
 }
 
@@ -68,6 +77,7 @@ export function setPlayerEngineCallbacks(callbacks: Partial<PlayerEngineCallback
 
 export async function playFromQueue(queue: Track[], index: number, isManual: boolean = true) {
   try {
+    playerCallbacks.stopRadio?.();
     const upcoming = queue.slice(index + 1);
     setCurrentQueue(upcoming);
     await invoke("play_track", { queue, startIndex: index, isManual });
@@ -114,6 +124,7 @@ export function updateAlgoButtonsUI() {
 
 export async function setSmartShuffleState(active: boolean) {
   setSmartShuffleActive(active);
+  await invoke("set_smart_shuffle_active", { active }).catch(() => {});
 
   const btnShuffle = $("btn-shuffle");
   if (btnShuffle) btnShuffle.classList.toggle("active", active);
@@ -131,6 +142,9 @@ export async function setSmartShuffleState(active: boolean) {
     await invoke("get_or_create_smart_session").catch(() => {});
     calculateNextSmartTrack();
   } else {
+    await invoke("set_smart_shuffle_playlist", { playlistId: null }).catch(() => {});
+    setActiveSmartShufflePlaylistId(null);
+    setActiveSmartShufflePlaylistName(null);
     setNextSmartTrack(null);
     updateSmartNextIndicator();
   }
@@ -138,8 +152,8 @@ export async function setSmartShuffleState(active: boolean) {
 
 export async function toggleSmartShuffle() {
   try {
-    const active = await invoke<boolean>("toggle_smart_shuffle");
-    await setSmartShuffleState(active);
+    const nextState = !smartShuffleActive;
+    await setSmartShuffleState(nextState);
     await refreshPlayerState();
   } catch (err) {
     console.error("Erreur bascule Smart Shuffle :", err);
@@ -151,10 +165,44 @@ export function updateSmartNextIndicator() {
   const label = $("smart-next-label");
   if (!indicator || !label) return;
   if (nextSmartTrack && smartShuffleActive) {
-    label.textContent = `${nextSmartTrack.title} — ${nextSmartTrack.artist}`;
+    const plBadge = activeSmartShufflePlaylistName ? `[${activeSmartShufflePlaylistName}] ` : "";
+    label.textContent = `${plBadge}${nextSmartTrack.title} — ${nextSmartTrack.artist}`;
     indicator.hidden = false;
   } else {
     indicator.hidden = true;
+  }
+}
+
+export async function startSmartShuffleForPlaylist(playlistId: string, playlistName?: string) {
+  try {
+    const tracks = await invoke<Track[]>("get_playlist_tracks", { playlistId });
+    if (!tracks || tracks.length === 0) {
+      showToast("Cette playlist est vide.", "warning");
+      return;
+    }
+
+    await invoke("set_smart_shuffle_playlist", { playlistId });
+    setActiveSmartShufflePlaylistId(playlistId);
+    setActiveSmartShufflePlaylistName(playlistName || "Playlist");
+
+    await setSmartShuffleState(true);
+
+    setCurrentQueue([...tracks]);
+
+    const session = await invoke<SmartSession>("get_or_create_smart_session");
+    const excludeIds = session.recent_track_ids ?? [];
+    const firstTrack = await invoke<Track>("get_next_smart_track", { excludeIds, queueIds: [] }).catch(() => tracks[0]);
+
+    if (firstTrack) {
+      await playFromSmartTrack(firstTrack);
+    } else {
+      await playFromQueue(tracks, 0);
+    }
+
+    showToast(`Smart Shuffle activé pour : ${playlistName || 'la playlist'} ✨`, "success");
+  } catch (err) {
+    console.error("Erreur lors du démarrage du Smart Shuffle sur la playlist :", err);
+    showToast("Impossible de démarrer le Smart Shuffle sur la playlist.", "error");
   }
 }
 
@@ -169,6 +217,16 @@ export async function calculateNextSmartTrack() {
     }
     const session = await invoke<SmartSession>("get_or_create_smart_session");
     const excludeIds = session.recent_track_ids ?? [];
+
+    if (activeMoodPlaylistOption) {
+      const moodTrack = getOrientedMoodTrack(excludeIds);
+      if (moodTrack) {
+        setNextSmartTrack(moodTrack);
+        updateSmartNextIndicator();
+        return;
+      }
+    }
+
     const queueIds = currentQueue.map((t) => t.id);
     const track = await invoke<Track>("get_next_smart_track", { excludeIds, queueIds });
     setNextSmartTrack(track);
@@ -316,11 +374,36 @@ export function applyPlayerState(state: PlayerState) {
   const btnFavNow = $("btn-fav-now");
   const btnEcstasyNow = $("btn-ecstasy-now");
 
-  const activeRadio = playerCallbacks.activeRadio;
-  const radioAudioEl = playerCallbacks.radioAudioEl;
+  const activeRadio = playerCallbacks.getActiveRadio?.() ?? null;
+  const radioAudioEl = playerCallbacks.getRadioAudioEl?.() ?? null;
   const isRadioActive = !!(activeRadio && radioAudioEl && radioAudioEl.src);
 
-  if (state.current_track && !isRadioActive) {
+  if (isRadioActive && activeRadio) {
+    if (nowTitle) nowTitle.textContent = activeRadio.name;
+    if (nowArtist) nowArtist.textContent = `Radio en Direct${activeRadio.country ? " (" + activeRadio.country + ")" : ""}`;
+    if (seekBar) seekBar.max = "0";
+    if (timeTotal) timeTotal.textContent = "LIVE";
+    if (timeCurrent) timeCurrent.textContent = "LIVE";
+
+    if (nowLikesEl) nowLikesEl.textContent = "0";
+    if (nowDislikesEl) nowDislikesEl.textContent = "0";
+
+    if (activeRadio.image_path) {
+      if (activeRadio.image_path.startsWith("http://") || activeRadio.image_path.startsWith("https://")) {
+        if (vinylCover) vinylCover.style.backgroundImage = `url("${activeRadio.image_path}")`;
+      } else {
+        getCoverDataUrl(activeRadio.image_path).then((dataUrl) => {
+          if (dataUrl && vinylCover) {
+            vinylCover.style.backgroundImage = `url("${dataUrl}")`;
+          } else if (vinylCover) {
+            vinylCover.style.backgroundImage = "";
+          }
+        });
+      }
+    } else if (vinylCover) {
+      vinylCover.style.backgroundImage = "";
+    }
+  } else if (state.current_track) {
     if (nowTitle) nowTitle.textContent = state.current_track.title;
     if (nowArtist) nowArtist.textContent = state.current_track.artist;
     if (seekBar) seekBar.max = String(state.current_track.duration_secs || 0);
@@ -350,27 +433,6 @@ export function applyPlayerState(state: PlayerState) {
     } else if (vinylCover) {
       vinylCover.style.backgroundImage = "";
     }
-  } else if (isRadioActive && activeRadio) {
-    if (nowTitle) nowTitle.textContent = activeRadio.name;
-    if (nowArtist) nowArtist.textContent = `Radio en Direct${activeRadio.country ? " (" + activeRadio.country + ")" : ""}`;
-    if (seekBar) seekBar.max = "0";
-    if (timeTotal) timeTotal.textContent = "LIVE";
-    if (timeCurrent) timeCurrent.textContent = "LIVE";
-
-    if (nowLikesEl) nowLikesEl.textContent = "0";
-    if (nowDislikesEl) nowDislikesEl.textContent = "0";
-
-    if (activeRadio.image_path) {
-      getCoverDataUrl(activeRadio.image_path).then((dataUrl) => {
-        if (dataUrl && vinylCover) {
-          vinylCover.style.backgroundImage = `url("${dataUrl}")`;
-        } else if (vinylCover) {
-          vinylCover.style.backgroundImage = "";
-        }
-      });
-    } else if (vinylCover) {
-      vinylCover.style.backgroundImage = "";
-    }
   } else {
     if (nowTitle) nowTitle.textContent = "Aucune lecture";
     if (nowArtist) nowArtist.textContent = "—";
@@ -387,6 +449,9 @@ export function applyPlayerState(state: PlayerState) {
     if (vinylCover) vinylCover.style.backgroundImage = "";
   }
 
+  updateLyricsButtonsState(state.current_track || null);
+  updateLyricsSyncHighlight(state.position_secs || 0, state.current_track || null);
+
   if (!isSeeking && seekBar && timeCurrent) {
     seekBar.value = String(state.position_secs);
     timeCurrent.textContent = fmtTime(state.position_secs);
@@ -398,6 +463,8 @@ export function applyPlayerState(state: PlayerState) {
   }
   const isRadioPlaying = !!(radioAudioEl && !radioAudioEl.paused && radioAudioEl.src);
   const isPlaying = state.is_playing || isRadioPlaying;
+
+  updateOverlayUI(state, activeRadio, radioAudioEl, isRadioPlaying);
 
   if (btnPlay) {
     btnPlay.innerHTML = isPlaying
@@ -476,8 +543,6 @@ export function applyPlayerState(state: PlayerState) {
     const isRowPlaying = !!currentTrackId && (row as HTMLElement).dataset.id === currentTrackId;
     row.classList.toggle("playing", isRowPlaying);
   });
-
-  updateOverlayUI(state, activeRadio, radioAudioEl, playerCallbacks.activeRadioPlaying);
 }
 
 export async function restoreLastPlayerState() {

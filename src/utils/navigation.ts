@@ -29,6 +29,7 @@ export interface NavCallbacks {
   loadArtists: () => void;
   loadGenres: () => void;
   loadTempo: () => void;
+  loadMood: () => void;
   loadPlaylists: () => void;
   loadRecents: () => void;
   loadFavorites: () => void;
@@ -108,6 +109,7 @@ export function restoreNavState(state: NavState) {
     if (state.view === "artists") navCallbacks.loadArtists?.();
     if (state.view === "genres") navCallbacks.loadGenres?.();
     if (state.view === "tempo") navCallbacks.loadTempo?.();
+    if (state.view === "mood") navCallbacks.loadMood?.();
     if (state.view === "playlists") navCallbacks.loadPlaylists?.();
     if (state.view === "recents") navCallbacks.loadRecents?.();
     if (state.view === "favorites") navCallbacks.loadFavorites?.();
@@ -150,6 +152,7 @@ export function switchView(view: string) {
     artists: "Artistes",
     genres: "Genres",
     tempo: "Tempo",
+    mood: "Humeur & Recommandations",
     playlists: "Playlists",
     queue: "File d'attente",
     recents: "Récents",

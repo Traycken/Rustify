@@ -31,9 +31,21 @@ export function closeGenreModal() {
   editingGenreName = null;
 }
 
-export function setupGenreModalEvents(onSaved?: () => Promise<void>) {
+let onDeleteGenreCallback: ((genreName: string) => Promise<void>) | null = null;
+
+export function setupGenreModalEvents(onSaved?: () => Promise<void>, onDeleteGenre?: (genreName: string) => Promise<void>) {
+  if (onDeleteGenre) onDeleteGenreCallback = onDeleteGenre;
+
   $("genre-modal-close")?.addEventListener("click", closeGenreModal);
   $("genre-modal-cancel")?.addEventListener("click", closeGenreModal);
+
+  $("genre-modal-delete")?.addEventListener("click", async () => {
+    if (editingGenreName && onDeleteGenreCallback) {
+      const genreToDelete = editingGenreName;
+      closeGenreModal();
+      await onDeleteGenreCallback(genreToDelete);
+    }
+  });
 
   $("genre-modal-save")?.addEventListener("click", async () => {
     if (!editingGenreName) return;

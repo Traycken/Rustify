@@ -28,9 +28,11 @@ import type {
   DownloadOptions,
   DownloaderLogPayload,
   DownloaderFinishedPayload,
+  OnlineMetadataResult,
 } from "../types";
 import { appAlert } from "../utils/dialog";
 import { copyElementTextToClipboard } from "../utils/logger";
+import { escapeHtml } from "../utils/formatting";
 
 export interface DownloaderTabCallbacks {
   loadLibrary: () => Promise<unknown>;
@@ -41,6 +43,161 @@ let downloaderCallbacks: Partial<DownloaderTabCallbacks> = {};
 export function setDownloaderCallbacks(callbacks: Partial<DownloaderTabCallbacks>) {
   downloaderCallbacks = { ...downloaderCallbacks, ...callbacks };
 }
+
+export function openSearchModal() {
+  const modal = $("downloader-search-modal");
+  if (modal) {
+    modal.style.display = "flex";
+    modal.hidden = false;
+  }
+}
+
+let activePreviewAudio: HTMLAudioElement | null = null;
+
+export function stopPreviewAudio() {
+  if (activePreviewAudio) {
+    activePreviewAudio.pause();
+    activePreviewAudio.currentTime = 0;
+    activePreviewAudio = null;
+  }
+}
+
+export function closeSearchModal() {
+  stopPreviewAudio();
+  const modal = $("downloader-search-modal");
+  if (modal) {
+    modal.hidden = true;
+    modal.style.display = "none";
+  }
+}
+
+export async function searchOnlineTracksAndShowModal(query: string) {
+  stopPreviewAudio();
+  const listContainer = $("downloader-search-results-list");
+  if (!listContainer) return;
+
+  listContainer.innerHTML = `
+    <div style="text-align: center; padding: 30px; color: var(--text-dim);">
+      <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: var(--accent); margin-bottom: 12px;"></i>
+      <p style="font-size: 0.95rem;">Recherche de <strong>"${escapeHtml(query)}"</strong> sur Deezer, iTunes & YouTube...</p>
+    </div>
+  `;
+  openSearchModal();
+
+  try {
+    const results = await invoke<OnlineMetadataResult[]>("search_online_tracks", { query });
+    if (!results || results.length === 0) {
+      listContainer.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--text-dim);">
+          <i class="fa-solid fa-circle-exclamation" style="font-size: 2rem; color: #ff6b6b; margin-bottom: 12px;"></i>
+          <p style="font-size: 0.95rem;">Aucun morceau trouvé pour <strong>"${escapeHtml(query)}"</strong>.</p>
+        </div>
+      `;
+      return;
+    }
+
+    listContainer.innerHTML = "";
+    results.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "downloader-search-item";
+
+      const coverSrc = item.cover_base64 || item.coverBase64;
+      const previewUrlSrc = item.preview_url || item.previewUrl;
+
+      const coverHtml = coverSrc
+        ? `<img src="${coverSrc}" class="downloader-search-cover" alt="Cover" />`
+        : `<div class="downloader-search-cover-placeholder"><i class="fa-solid fa-music"></i></div>`;
+
+      const titleStr = escapeHtml(item.title || "Titre inconnu");
+      const artistStr = escapeHtml(item.artist || "Artiste inconnu");
+      const albumStr = item.album ? ` • ${escapeHtml(item.album)}` : "";
+      
+      const downloadTargetVal = (item.source === "YouTube" && previewUrlSrc)
+        ? previewUrlSrc
+        : `${item.artist || ""} ${item.title || ""}`.trim();
+
+      const previewBtnHtml = previewUrlSrc
+        ? `<button class="btn-icon-secondary btn-preview-audio" title="Écouter un extrait audio"><i class="fa-solid fa-play"></i></button>`
+        : "";
+
+      card.innerHTML = `
+        ${coverHtml}
+        <div class="downloader-search-info">
+          <div class="downloader-search-title">${titleStr}</div>
+          <div class="downloader-search-meta">${artistStr}${albumStr}</div>
+        </div>
+        <span class="downloader-search-badge">${escapeHtml(item.source)}</span>
+        ${previewBtnHtml}
+        <button class="btn-primary downloader-search-select-btn" title="Télécharger cette musique">
+          <i class="fa-solid fa-check"></i> Choisir
+        </button>
+      `;
+
+      if (previewBtnHtml && previewUrlSrc) {
+        const pBtn = card.querySelector(".btn-preview-audio");
+        pBtn?.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const icon = pBtn.querySelector("i");
+          if (activePreviewAudio && activePreviewAudio.dataset.rawUrl === previewUrlSrc && !activePreviewAudio.paused) {
+            stopPreviewAudio();
+            if (icon) icon.className = "fa-solid fa-play";
+            return;
+          }
+
+          stopPreviewAudio();
+          document.querySelectorAll(".btn-preview-audio i").forEach((ic) => ic.className = "fa-solid fa-play");
+          if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+
+          let streamUrl = previewUrlSrc;
+          if (item.source === "YouTube") {
+            try {
+              streamUrl = await invoke<String>("resolve_video_audio_stream", { url: previewUrlSrc }) as string;
+            } catch (err) {
+              console.warn("Erreur résolution flux audio YouTube:", err);
+            }
+          }
+
+          const audio = new Audio(streamUrl);
+          audio.dataset.rawUrl = previewUrlSrc;
+          activePreviewAudio = audio;
+          audio.play().then(() => {
+            if (icon) icon.className = "fa-solid fa-pause";
+          }).catch((err) => {
+            console.warn("Erreur lecture extrait:", err);
+            if (icon) icon.className = "fa-solid fa-play";
+          });
+          audio.onended = () => {
+            if (icon) icon.className = "fa-solid fa-play";
+            activePreviewAudio = null;
+          };
+        });
+      }
+
+      card.addEventListener("click", () => {
+        stopPreviewAudio();
+        const urlInput = $<HTMLInputElement>("downloader-url-input");
+        if (urlInput) {
+          urlInput.value = downloadTargetVal;
+        }
+        closeSearchModal();
+        appendDownloaderLog(`🎯 Morceau sélectionné : "${titleStr} - ${artistStr}". Prêt pour le téléchargement.`, false, true);
+        startDownloadJob();
+      });
+
+      listContainer.appendChild(card);
+    });
+  } catch (err) {
+    console.error("Erreur search_online_tracks:", err);
+    listContainer.innerHTML = `
+      <div style="text-align: center; padding: 30px; color: #ff6b6b;">
+        <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; margin-bottom: 12px;"></i>
+        <p style="font-size: 0.95rem;">Erreur lors de la recherche : ${escapeHtml(String(err))}</p>
+      </div>
+    `;
+  }
+}
+
+
 
 export function appendDownloaderLog(line: string, isError = false, isSuccess = false) {
   const container = $("downloader-console-log");
@@ -294,6 +451,43 @@ export function initDownloaderEvents() {
   $("downloader-browser-custom-input")?.addEventListener("input", () => {
     syncExtraYtdlpCookies();
   });
+
+  const triggerSearchOrDownload = () => {
+    const urlInput = $<HTMLInputElement>("downloader-url-input");
+    const val = urlInput?.value.trim() || "";
+    if (!val) return;
+    const isUrl = val.startsWith("http://") || val.startsWith("https://") || val.startsWith("www.");
+    if (isUrl) {
+      startDownloadJob();
+    } else {
+      searchOnlineTracksAndShowModal(val);
+    }
+  };
+
+  $("btn-search-download")?.addEventListener("click", () => {
+    const urlInput = $<HTMLInputElement>("downloader-url-input");
+    const val = urlInput?.value.trim() || "";
+    if (!val) {
+      appAlert("Veuillez saisir un titre de musique ou un mot-clé à rechercher.");
+      return;
+    }
+    const isUrl = val.startsWith("http://") || val.startsWith("https://") || val.startsWith("www.");
+    if (isUrl) {
+      startDownloadJob();
+    } else {
+      searchOnlineTracksAndShowModal(val);
+    }
+  });
+
+  $("downloader-url-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      triggerSearchOrDownload();
+    }
+  });
+
+  $("downloader-search-modal-close")?.addEventListener("click", () => closeSearchModal());
+  $("downloader-search-modal-cancel")?.addEventListener("click", () => closeSearchModal());
 
   $("btn-start-download")?.addEventListener("click", () => startDownloadJob());
 

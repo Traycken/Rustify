@@ -176,10 +176,13 @@ pub fn init_connection() -> anyhow::Result<Connection> {
             target_artist         TEXT,
             target_bpm_min        REAL,
             target_bpm_max        REAL,
+            target_playlist_id    TEXT,
             algo_feedback         TEXT NOT NULL DEFAULT '[]'
         );
         ",
     )?;
+    let _ = conn.execute("ALTER TABLE smart_shuffle_session ADD COLUMN target_playlist_id TEXT", []);
+
 
     // Profil d'égaliseur par défaut ("Plat", gains à 0) créé au tout premier
     // lancement, pour qu'un profil actif existe toujours.
@@ -986,14 +989,16 @@ pub fn get_favorites_data(conn: &Connection) -> anyhow::Result<crate::models::Fa
     })
 }
 
-pub fn get_track_live_stats(conn: &Connection, track_id: &str) -> anyhow::Result<(i32, i32, bool)> {
-    let mut stmt = conn.prepare("SELECT likes, dislikes, is_favorite FROM tracks WHERE id = ?1 OR path = ?1")?;
+pub fn get_track_live_stats(conn: &Connection, track_id: &str) -> anyhow::Result<(i32, i32, bool, bool)> {
+    let mut stmt = conn.prepare("SELECT likes, dislikes, is_favorite, is_ecstasy FROM tracks WHERE id = ?1 OR path = ?1")?;
     let res = stmt.query_row(params![track_id], |r| {
         let likes: i32 = r.get(0).unwrap_or(0);
         let dislikes: i32 = r.get(1).unwrap_or(0);
         let is_fav_val: i32 = r.get(2).unwrap_or(0);
         let is_fav = is_fav_val != 0 || is_favorite(conn, "track", track_id);
-        Ok((likes, dislikes, is_fav))
+        let is_ecstasy_val: i32 = r.get(3).unwrap_or(0);
+        let is_ecstasy = is_ecstasy_val != 0;
+        Ok((likes, dislikes, is_fav, is_ecstasy))
     })?;
     Ok(res)
 }
@@ -1461,6 +1466,7 @@ pub struct SmartSession {
     pub target_artist: Option<String>,
     pub target_bpm_min: Option<f64>,
     pub target_bpm_max: Option<f64>,
+    pub target_playlist_id: Option<String>,
     pub algo_feedback: Vec<AlgoFeedback>,
 }
 
@@ -1477,7 +1483,7 @@ pub fn get_or_create_smart_session(conn: &Connection) -> anyhow::Result<SmartSes
     let existing: Option<SmartSession> = conn.query_row(
         "SELECT id, session_start, expires_at, recent_track_ids, consecutive_skips,
                 consecutive_completes, target_genre, target_artist, target_bpm_min,
-                target_bpm_max, algo_feedback
+                target_bpm_max, algo_feedback, target_playlist_id
          FROM smart_shuffle_session
          WHERE expires_at > ?1
          ORDER BY id DESC LIMIT 1",
@@ -1497,6 +1503,7 @@ pub fn get_or_create_smart_session(conn: &Connection) -> anyhow::Result<SmartSes
                 target_bpm_min: row.get(8)?,
                 target_bpm_max: row.get(9)?,
                 algo_feedback: serde_json::from_str(&feedback_json).unwrap_or_default(),
+                target_playlist_id: row.get(11).ok().flatten(),
             })
         },
     ).ok();
@@ -1528,8 +1535,22 @@ pub fn get_or_create_smart_session(conn: &Connection) -> anyhow::Result<SmartSes
         target_artist: None,
         target_bpm_min: None,
         target_bpm_max: None,
+        target_playlist_id: None,
         algo_feedback: vec![],
     })
+}
+
+/// Définit ou réinitialise la playlist cible du Smart Shuffle pour la session active.
+pub fn set_smart_shuffle_playlist(
+    conn: &Connection,
+    playlist_id: Option<String>,
+) -> anyhow::Result<SmartSession> {
+    let session = get_or_create_smart_session(conn)?;
+    conn.execute(
+        "UPDATE smart_shuffle_session SET target_playlist_id = ?1 WHERE id = ?2",
+        params![playlist_id, session.id],
+    )?;
+    get_or_create_smart_session(conn)
 }
 
 /// Met à jour la session après une fin de piste ou un skip.
@@ -1681,8 +1702,18 @@ pub fn get_next_smart_track(
 ) -> anyhow::Result<Track> {
     use rand::Rng;
 
-    let all_tracks = get_tracks(conn)?;
-    if all_tracks.is_empty() {
+    let pool_tracks = if let Some(ref pid) = session.target_playlist_id {
+        let pl_tracks = get_playlist_tracks(conn, pid)?;
+        if pl_tracks.is_empty() {
+            get_tracks(conn)?
+        } else {
+            pl_tracks
+        }
+    } else {
+        get_tracks(conn)?
+    };
+
+    if pool_tracks.is_empty() {
         return Err(anyhow::anyhow!("Bibliothèque vide"));
     }
 
@@ -1708,7 +1739,7 @@ pub fn get_next_smart_track(
     let skip_penalty = (consec_skips as f64 * 4.0).min(25.0);
 
     // 3. Calcul du score effectif (Score Permanent - Pénalité Glissante 24h + Contextes)
-    let candidate_scores: Vec<(&Track, f64)> = all_tracks
+    let candidate_scores: Vec<(&Track, f64)> = pool_tracks
         .iter()
         .map(|t| {
             let mut score = t.permanent_score;
@@ -2019,4 +2050,138 @@ pub fn update_radio_status(conn: &Connection, id: &str, is_online: bool) -> anyh
     )?;
     Ok(())
 }
+
+pub fn remove_from_playlist(conn: &Connection, playlist_id: &str, track_id: &str) -> anyhow::Result<()> {
+    conn.execute(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND (track_id = ?2 OR track_id IN (SELECT id FROM tracks WHERE path = ?2))",
+        params![playlist_id, track_id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_track(conn: &Connection, track_id: &str, delete_file: bool) -> anyhow::Result<()> {
+    let mut stmt = conn.prepare("SELECT path FROM tracks WHERE id = ?1 OR path = ?1")?;
+    let paths: Vec<String> = stmt
+        .query_map(params![track_id], |r| r.get(0))?
+        .filter_map(Result::ok)
+        .collect();
+
+    for track_path in &paths {
+        if delete_file {
+            let p = std::path::Path::new(track_path);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        conn.execute(
+            "DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks WHERE path = ?1 OR id = ?1)",
+            params![track_path],
+        )?;
+        conn.execute(
+            "DELETE FROM favorites WHERE target_id = ?1 OR target_id IN (SELECT id FROM tracks WHERE path = ?1 OR id = ?1)",
+            params![track_path],
+        )?;
+        conn.execute(
+            "DELETE FROM play_history WHERE track_id IN (SELECT id FROM tracks WHERE path = ?1 OR id = ?1)",
+            params![track_path],
+        )?;
+        conn.execute(
+            "DELETE FROM tracks WHERE path = ?1 OR id = ?1",
+            params![track_path],
+        )?;
+    }
+
+    conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?1", params![track_id])?;
+    conn.execute("DELETE FROM favorites WHERE target_id = ?1", params![track_id])?;
+    conn.execute("DELETE FROM play_history WHERE track_id = ?1", params![track_id])?;
+    conn.execute("DELETE FROM tracks WHERE id = ?1", params![track_id])?;
+
+    Ok(())
+}
+
+pub fn delete_artist(conn: &Connection, artist_name: &str, delete_files: bool) -> anyhow::Result<usize> {
+    let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE LOWER(artist) = LOWER(?1) OR LOWER(album_artist) = LOWER(?1)")?;
+    let tracks: Vec<(String, String)> = stmt
+        .query_map(params![artist_name], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .filter_map(Result::ok)
+        .collect();
+
+    let count = tracks.len();
+    for (tid, path) in &tracks {
+        if delete_files {
+            let p = std::path::Path::new(path);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM favorites WHERE target_id = ?1 OR target_id = ?2", params![tid, path])?;
+        conn.execute("DELETE FROM play_history WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM tracks WHERE id = ?1", params![tid])?;
+    }
+
+    conn.execute("DELETE FROM artist_metadata WHERE LOWER(artist) = LOWER(?1)", params![artist_name])?;
+    conn.execute("DELETE FROM favorites WHERE target_type = 'artist' AND LOWER(target_id) = LOWER(?1)", params![artist_name])?;
+
+    Ok(count)
+}
+
+pub fn delete_album(conn: &Connection, album_name: &str, artist_name: Option<&str>, delete_files: bool) -> anyhow::Result<usize> {
+    let tracks: Vec<(String, String)> = if let Some(art) = artist_name {
+        let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE LOWER(album) = LOWER(?1) AND (LOWER(artist) = LOWER(?2) OR LOWER(album_artist) = LOWER(?2))")?;
+        let res = stmt.query_map(params![album_name, art], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .filter_map(Result::ok)
+            .collect();
+        res
+    } else {
+        let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE LOWER(album) = LOWER(?1)")?;
+        let res = stmt.query_map(params![album_name], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .filter_map(Result::ok)
+            .collect();
+        res
+    };
+
+    let count = tracks.len();
+    for (tid, path) in &tracks {
+        if delete_files {
+            let p = std::path::Path::new(path);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM favorites WHERE target_id = ?1 OR target_id = ?2", params![tid, path])?;
+        conn.execute("DELETE FROM play_history WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM tracks WHERE id = ?1", params![tid])?;
+    }
+
+    conn.execute("DELETE FROM favorites WHERE target_type = 'album' AND LOWER(target_id) = LOWER(?1)", params![album_name])?;
+
+    Ok(count)
+}
+
+pub fn delete_genre(conn: &Connection, genre_name: &str, delete_files: bool) -> anyhow::Result<usize> {
+    let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE LOWER(genre) = LOWER(?1)")?;
+    let tracks: Vec<(String, String)> = stmt
+        .query_map(params![genre_name], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .filter_map(Result::ok)
+        .collect();
+
+    let count = tracks.len();
+    for (tid, path) in &tracks {
+        if delete_files {
+            let p = std::path::Path::new(path);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM favorites WHERE target_id = ?1 OR target_id = ?2", params![tid, path])?;
+        conn.execute("DELETE FROM play_history WHERE track_id = ?1", params![tid])?;
+        conn.execute("DELETE FROM tracks WHERE id = ?1", params![tid])?;
+    }
+
+    Ok(count)
+}
+
 

@@ -49,6 +49,7 @@ pub enum PlayerCommand {
     ToggleRepeat,
     ToggleShuffle,
     ToggleSmartShuffle,
+    SetSmartShuffleActive(bool),
     SetAudioDevice(String),
 
     /// Applique un état d'égaliseur (10 bandes + préampli), immédiatement et
@@ -574,6 +575,12 @@ fn apply_command(engine: &mut Engine, cmd: PlayerCommand) -> anyhow::Result<()> 
         PlayerCommand::ToggleShuffle => engine.shuffle = !engine.shuffle,
         PlayerCommand::ToggleSmartShuffle => {
             engine.smart_shuffle_active = !engine.smart_shuffle_active;
+            if engine.smart_shuffle_active {
+                engine.trim_queue_to_current();
+            }
+        }
+        PlayerCommand::SetSmartShuffleActive(active) => {
+            engine.smart_shuffle_active = active;
             if engine.smart_shuffle_active {
                 engine.trim_queue_to_current();
             }

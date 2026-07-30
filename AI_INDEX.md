@@ -28,6 +28,7 @@ Rustify/
     │   └── tauriApi.ts         # Wrappers IPC type-safe pour Tauri invoke & listen
     ├── utils/
     │   ├── dialog.ts           # Modales appAlert, appConfirm, appPrompt
+    │   ├── toast.ts            # Toast de notification modulaire (centre-haut, slideIn/Out)
     │   ├── formatting.ts       # Formatage de temps, HTML escaping, dates, sliders
     │   ├── logger.ts           # Intercepteur d'erreurs, logs frontend/backend, presse-papier
     │   └── navigation.ts       # Pile d'historique (Recul/Avance), switchView & accordéons
@@ -39,7 +40,8 @@ Rustify/
     │   ├── trackModal.ts       # Fiche morceau & enrichissement avancé (Deezer, MusicBrainz...)
     │   ├── albumModal.ts       # Édition d'album & recherche Web de pochettes
     │   ├── artistModal.ts      # Fiche artiste, recherche photo HD & membres du groupe
-    │   └── genreModal.ts       # Modale de renommage de genre
+    │   ├── genreModal.ts       # Modale de renommage de genre
+    │   └── lyricsModal.ts      # Affichage des paroles & paroles synchronisées (LRCLIB)
     └── tabs/
         ├── tracksTab.ts        # Table des morceaux & rendu chunked par paquets
         ├── albumsTab.ts        # Grille d'albums & filtrage par album
@@ -82,6 +84,7 @@ Rustify/
 - **`albumModal.ts`** : `openAlbumModal`, `closeAlbumModal`, `fetchOnlineAlbumMetadata`.
 - **`artistModal.ts`** : `openArtistModal`, `closeArtistModal`, `searchArtistPhotoOnline`, `enrichArtistPhotosInBatch`.
 - **`genreModal.ts`** : `openGenreModal`, `setupGenreModalEvents`.
+- **`lyricsModal.ts`** : `openLyricsModal`, `closeLyricsModal`, `setupLyricsModalEvents`.
 
 ### 5. `src/player/`
 - **`playerEngine.ts`** : `playFromQueue`, `refreshPlayerState`, `applyPlayerState`, `restoreLastPlayerState`, `toggleSmartShuffle`, `pollState`, `registerListenEventBeforeSkip`.
@@ -93,10 +96,10 @@ Rustify/
 - **`artistsTab.ts`** : `loadArtists`, `renderArtistsGrid`, `openArtistView`, `openArtistByName`, `isArtistGroup`, `fetchBandMembersAndBio`, `renderArtistBannerExtras`.
 - **`genresTab.ts`** : `loadGenres`, `filterByGenre`, `parseGenres`.
 - **`tempoTab.ts`** : `loadTempo`, `filterByTempo`, `getTempoBucket`, `runBpmBatchAnalysis`.
-- **`playlistsTab.ts`** : `loadPlaylists`.
-- **`radiosTab.ts`** : `loadRadios`, `playRadio`, `openRadioModal`, `initRadioEvents`, `syncRadioAudioDevice`.
+- **`playlistsTab.ts`** : `loadPlaylists()`. Gère l'affichage séparé des Playlists Systèmes (Auto-remplies) et des Playlists Créées (Personnalisées).
+- **`radiosTab.ts`** : `loadRadios`, `playRadio`, `openRadioModal`, `openRadioLivesModal`, `initRadioEvents`, `syncRadioAudioDevice`. Gère les radios audio, la détection auto des métadonnées, le sélecteur multi-lives en direct et flux streaming vidéo (YouTube @profil/live & Twitch).
 - **`recentsTab.ts`** : `loadRecents`.
-- **`favoritesTab.ts`** : `loadFavorites`.
+- **`favoritesTab.ts`** : `loadFavorites()`. Regroupe et sépare proprement les Titres (Favoris ⭐, Aimés 👍, Non aimés 👎 via sous-onglets), les Albums Favoris 💿, les Artistes Solo Favoris 👤, les Groupes Favoris 👥, et les Playlists Créées 📜.
 - **`ecstasyTab.ts`** : `loadEcstasyTracks`.
 - **`downloaderTab.ts`** : `checkDownloaderEnvStatus`, `setupDownloaderEnv`, `loadDownloaderSettings`, `saveDownloaderSettings`, `startDownloadJob`, `cancelDownloadJob`, `initDownloaderEvents`.
 - **`settingsTab.ts`** : `loadAppSettings`, `loadAudioDevices`, `renderAudioDeviceUI`, `selectAudioDevice`, `loadEqState`, `saveEqProfileFromUi`, `matchShortcut`, `initSettingsEvents`.

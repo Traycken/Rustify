@@ -313,6 +313,7 @@ pub struct OnlineTrackMetadata {
     pub genre: Option<String>,
     pub year: Option<i32>,
     pub cover_base64: Option<String>,
+    pub preview_url: Option<String>,
     pub source: String,
 }
 
@@ -1043,6 +1044,7 @@ async fn fetch_deezer_track_metadata(artist: &str, title: &str) -> Option<Online
         genre,
         year,
         cover_base64,
+        preview_url: item["preview"].as_str().map(|s| s.to_string()),
         source: "Deezer".to_string(),
     })
 }
@@ -1091,6 +1093,7 @@ pub async fn fetch_online_track_metadata(artist: &str, title: &str) -> Option<On
                             .map(|s| s.to_string()),
                         year,
                         cover_base64: None,
+                        preview_url: None,
                         source: "MusicBrainz API".to_string(),
                     });
                 }
@@ -1120,12 +1123,173 @@ pub async fn fetch_online_track_metadata(artist: &str, title: &str) -> Option<On
                 genre: item["primaryGenreName"].as_str().map(|s| s.to_string()),
                 year,
                 cover_base64,
+                preview_url: item["previewUrl"].as_str().map(|s| s.to_string()),
                 source: "iTunes Search API".to_string(),
             });
         }
     }
 
     None
+}
+
+/// Recherche en ligne de morceaux par mot-clé (titre ou titre + artiste).
+/// Interroge Deezer, iTunes et YouTube (via yt-dlp si l'environnement le permet).
+/// Récupère pochettes et URL d'extraits audio (previews 30s).
+pub async fn search_online_tracks(query: &str) -> Vec<OnlineTrackMetadata> {
+    let mut results: Vec<OnlineTrackMetadata> = Vec::new();
+    let client = http_client();
+
+    // 1) Deezer (jusqu'à 8 résultats avec extrait audio 30s)
+    let deezer_url = format!(
+        "https://api.deezer.com/search?q={}&limit=8",
+        urlencoding::encode(query)
+    );
+    if let Ok(resp) = client.get(&deezer_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                if let Some(arr) = data["data"].as_array() {
+                    for item in arr {
+                        let title = item["title"].as_str().unwrap_or("").to_string();
+                        let artist = item["artist"]["name"].as_str().unwrap_or("").to_string();
+                        let album = item["album"]["title"].as_str().unwrap_or("").to_string();
+                        let preview_url = item["preview"].as_str().map(|s| s.to_string());
+                        let cover_url = item["album"]["cover_medium"]
+                            .as_str()
+                            .or_else(|| item["album"]["cover_big"].as_str())
+                            .or_else(|| item["album"]["cover_xl"].as_str())
+                            .map(|s| s.to_string());
+                        let cover_base64 = match &cover_url {
+                            Some(u) => fetch_image_as_base64_internal(u).await,
+                            None => None,
+                        };
+
+                        results.push(OnlineTrackMetadata {
+                            title: Some(title),
+                            artist: Some(artist),
+                            album: Some(album),
+                            genre: None,
+                            year: None,
+                            cover_base64,
+                            preview_url,
+                            source: "Deezer".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 2) iTunes Search API (complète si besoin avec extrait 30s)
+    if results.len() < 5 {
+        if let Some(data) = itunes_search_song(query).await {
+            if let Some(arr) = data["results"].as_array() {
+                for item in arr {
+                    let title = item["trackName"].as_str().unwrap_or("").to_string();
+                    let artist = item["artistName"].as_str().unwrap_or("").to_string();
+                    let album = item["collectionName"].as_str().unwrap_or("").to_string();
+                    let year = item["releaseDate"]
+                        .as_str()
+                        .and_then(|d| d.get(..4))
+                        .and_then(|y| y.parse::<i32>().ok());
+                    let genre = item["primaryGenreName"].as_str().map(|s| s.to_string());
+                    let preview_url = item["previewUrl"].as_str().map(|s| s.to_string());
+                    let cover_url = item["artworkUrl100"]
+                        .as_str()
+                        .map(|u| u.replace("100x100bb", "300x300bb"));
+                    let cover_base64 = match &cover_url {
+                        Some(u) => fetch_image_as_base64_internal(u).await,
+                        None => None,
+                    };
+
+                    let duplicate = results.iter().any(|r| {
+                        r.title.as_deref().unwrap_or("").eq_ignore_ascii_case(&title)
+                            && r.artist.as_deref().unwrap_or("").eq_ignore_ascii_case(&artist)
+                    });
+
+                    if !duplicate {
+                        results.push(OnlineTrackMetadata {
+                            title: Some(title),
+                            artist: Some(artist),
+                            album: Some(album),
+                            genre,
+                            year,
+                            cover_base64,
+                            preview_url,
+                            source: "iTunes".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 3) YouTube via yt-dlp (si présent dans l'environnement embarqué)
+    let yt_dlp_bin = crate::downloader::yt_dlp_exe_path();
+    if yt_dlp_bin.exists() {
+        let search_arg = format!("ytsearch5:{}", query);
+        let output_res = tokio::process::Command::new(yt_dlp_bin)
+            .env("PYTHONIOENCODING", "utf-8")
+            .env("PYTHONUTF8", "1")
+            .arg("-j")
+            .arg("--flat-playlist")
+            .arg(&search_arg)
+            .output()
+            .await;
+
+        if let Ok(output) = output_res {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let line = line.trim();
+                    if line.is_empty() { continue; }
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                        let title = json["title"].as_str().unwrap_or("Video YouTube").to_string();
+                        let artist = json["uploader"]
+                            .as_str()
+                            .or_else(|| json["channel"].as_str())
+                            .unwrap_or("YouTube")
+                            .to_string();
+                        let url = json["url"]
+                            .as_str()
+                            .or_else(|| json["webpage_url"].as_str())
+                            .map(|u| if u.starts_with("http") { u.to_string() } else { format!("https://www.youtube.com/watch?v={}", u) })
+                            .unwrap_or_default();
+                        
+                        let thumbnails = json["thumbnails"].as_array();
+                        let thumb_url = thumbnails
+                            .and_then(|arr| arr.last())
+                            .and_then(|t| t["url"].as_str())
+                            .or_else(|| json["thumbnail"].as_str())
+                            .map(|s| s.to_string());
+
+                        let cover_base64 = match &thumb_url {
+                            Some(u) => fetch_image_as_base64_internal(u).await,
+                            None => None,
+                        };
+
+                        let duplicate = results.iter().any(|r| {
+                            r.title.as_deref().unwrap_or("").eq_ignore_ascii_case(&title)
+                        });
+
+                        if !duplicate && !url.is_empty() {
+                            results.push(OnlineTrackMetadata {
+                                title: Some(title),
+                                artist: Some(artist),
+                                album: Some("YouTube Video".to_string()),
+                                genre: None,
+                                year: None,
+                                cover_base64,
+                                preview_url: Some(url),
+                                source: "YouTube".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    results
 }
 
 /// Photo d'un artiste : Deezer en priorité (vraie photo `picture_xl`, pas de

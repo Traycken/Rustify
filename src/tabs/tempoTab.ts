@@ -24,7 +24,7 @@ import { appAlert, appConfirm } from "../utils/dialog";
 
 export interface TempoTabCallbacks {
   switchView: (view: string) => void;
-  renderTracks: (tracks: Track[]) => void;
+  renderTracks: (tracks: Track[], playlistId?: string) => void;
   pushNavState: (state: NavState) => void;
   loadLibrary: () => Promise<unknown>;
 }

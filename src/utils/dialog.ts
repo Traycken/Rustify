@@ -17,6 +17,9 @@
 
 import { $ } from "../state";
 import type { AppDialogOptions } from "../types";
+import { showToast, showInfoToast, showSuccessToast, showErrorToast, showWarningToast } from "./toast";
+
+export { showToast, showInfoToast, showSuccessToast, showErrorToast, showWarningToast };
 
 export function openAppDialog(opts: AppDialogOptions): Promise<string | boolean | null> {
   return new Promise((resolve) => {
@@ -99,5 +102,80 @@ export function appPrompt(message: string, defaultValue = "", title?: string): P
 }
 
 export function showAlert(msg: string) {
-  appAlert(msg);
+  showInfoToast(msg);
 }
+
+export interface DeleteConfirmOptions {
+  title?: string;
+  message: string;
+}
+
+export function appDeleteConfirm(opts: DeleteConfirmOptions): Promise<{ confirmed: boolean; deleteFile: boolean }> {
+  return new Promise((resolve) => {
+    const modal = $("delete-confirm-modal");
+    const titleEl = $("delete-modal-title");
+    const messageEl = $("delete-modal-message");
+    const checkbox = $<HTMLInputElement>("delete-modal-file-checkbox");
+    const warning = $("delete-modal-warning");
+    const confirmBtn = $<HTMLButtonElement>("delete-modal-confirm");
+    const cancelBtn = $<HTMLButtonElement>("delete-modal-cancel");
+    const closeBtn = $("delete-modal-close");
+
+    if (!modal || !titleEl || !messageEl || !confirmBtn || !cancelBtn || !closeBtn) {
+      resolve({ confirmed: false, deleteFile: false });
+      return;
+    }
+
+    titleEl.innerHTML = `<i class="fa-solid fa-trash"></i> ${opts.title || "Suppression"}`;
+    messageEl.textContent = opts.message;
+    if (checkbox) checkbox.checked = false;
+    if (warning) warning.style.display = "none";
+
+    modal.hidden = false;
+    modal.style.display = "flex";
+
+    const onCheckboxChange = () => {
+      if (warning && checkbox) {
+        warning.style.display = checkbox.checked ? "block" : "none";
+      }
+    };
+
+    if (checkbox) {
+      checkbox.addEventListener("change", onCheckboxChange);
+    }
+
+    const cleanup = () => {
+      modal.hidden = true;
+      modal.style.display = "none";
+      if (checkbox) checkbox.removeEventListener("change", onCheckboxChange);
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      closeBtn.removeEventListener("click", onCancel);
+      window.removeEventListener("keydown", onKeydown);
+    };
+
+    const onConfirm = () => {
+      const deleteFile = checkbox ? checkbox.checked : false;
+      cleanup();
+      resolve({ confirmed: true, deleteFile });
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve({ confirmed: false, deleteFile: false });
+    };
+
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    closeBtn.addEventListener("click", onCancel);
+    window.addEventListener("keydown", onKeydown);
+  });
+}
+

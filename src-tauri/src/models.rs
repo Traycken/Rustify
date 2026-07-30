@@ -282,3 +282,20 @@ pub struct RadioInput {
     pub is_video: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelLiveStreamItem {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub thumbnail_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RadioOnlineMetadataResult {
+    pub name: Option<String>,
+    pub genre: Option<String>,
+    pub country: Option<String>,
+    pub cover_url: Option<String>,
+    pub is_video: bool,
+}
+

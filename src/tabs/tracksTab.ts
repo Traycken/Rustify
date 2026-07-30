@@ -28,6 +28,8 @@ export interface TracksTabCallbacks {
   openGenericContextMenu: (e: MouseEvent, target: ContextTarget) => void;
   reloadFavorites: () => void;
   reloadEcstasy: () => void;
+  startSmartShuffleForPlaylist: (playlistId: string, playlistName?: string) => void;
+  deletePlaylist: (playlistId: string, playlistName?: string) => void;
 }
 
 let tracksCallbacks: Partial<TracksTabCallbacks> = {};
@@ -38,7 +40,7 @@ export function setTracksTabCallbacks(callbacks: Partial<TracksTabCallbacks>) {
 
 let trackRenderToken = 0;
 
-export function buildTrackRow(t: Track, i: number, tracks: Track[]): HTMLTableRowElement {
+export function buildTrackRow(t: Track, i: number, tracks: Track[], currentPlaylistId?: string): HTMLTableRowElement {
   const tr = document.createElement("tr");
   tr.dataset.id = String(t.id);
   const favBadge = t.is_ecstasy
@@ -55,8 +57,12 @@ export function buildTrackRow(t: Track, i: number, tracks: Track[]): HTMLTableRo
     tempScore += 100;
   }
   const effScore = Math.round(((t.effective_score !== undefined ? t.effective_score : (t.permanent_score ?? 0)) + (isInQueue && t.effective_score === undefined ? 100 : 0)) * 10) / 10;
-  const tempSign = tempScore >= 0 ? `+${tempScore}` : `${tempScore}`;
-  const scoreDisplay = `score: ${effScore} (${permScore} ${tempSign})`;
+  const hasTempScore = tempScore !== 0;
+  const tempSign = tempScore > 0 ? ` +${tempScore}` : ` ${tempScore}`;
+
+  const scoreDisplay = hasTempScore 
+    ? `${effScore} (${permScore}${tempSign})` 
+    : `${effScore}`;
 
   tr.innerHTML = `
     <td class="col-idx">${i + 1}</td>
@@ -92,16 +98,55 @@ export function buildTrackRow(t: Track, i: number, tracks: Track[]): HTMLTableRo
     tracksCallbacks.playFromQueue?.(tracks, i);
   });
   tr.addEventListener("contextmenu", (e) => {
-    tracksCallbacks.openGenericContextMenu?.(e, { type: "track", track: t, index: i, queue: tracks });
+    tracksCallbacks.openGenericContextMenu?.(e, { type: "track", track: t, index: i, queue: tracks, currentPlaylistId });
   });
 
   return tr;
 }
 
-export function renderTracks(tracks: Track[]) {
+export function renderTracks(tracks: Track[], currentPlaylistId?: string) {
   const trackTbody = $("track-tbody");
   const emptyState = $("empty-state");
+  const playlistHeader = $("playlist-header");
   if (!trackTbody || !emptyState) return;
+
+  if (playlistHeader) {
+    if (currentPlaylistId) {
+      playlistHeader.hidden = false;
+      const titleEl = $("playlist-banner-name");
+      const countEl = $("playlist-banner-count");
+      const viewTitle = $("view-title");
+      const plName = viewTitle?.textContent || "Playlist";
+      if (titleEl) titleEl.textContent = plName;
+      if (countEl) countEl.textContent = `${tracks.length} morceau(x)`;
+
+      const isSystem = currentPlaylistId === "system_liked_tracks" || currentPlaylistId === "liked";
+
+      const btnPlayAll = $("btn-playlist-play-all");
+      if (btnPlayAll) {
+        btnPlayAll.onclick = () => {
+          tracksCallbacks.playFromQueue?.(tracks, 0);
+        };
+      }
+
+      const btnSmart = $("btn-playlist-smart-shuffle");
+      if (btnSmart) {
+        btnSmart.onclick = () => {
+          tracksCallbacks.startSmartShuffleForPlaylist?.(currentPlaylistId, plName);
+        };
+      }
+
+      const btnDelete = $<HTMLButtonElement>("btn-playlist-delete");
+      if (btnDelete) {
+        btnDelete.hidden = isSystem;
+        btnDelete.onclick = () => {
+          tracksCallbacks.deletePlaylist?.(currentPlaylistId, plName);
+        };
+      }
+    } else {
+      playlistHeader.hidden = true;
+    }
+  }
 
   const token = ++trackRenderToken;
   trackTbody.innerHTML = "";
@@ -117,7 +162,7 @@ export function renderTracks(tracks: Track[]) {
     const fragment = document.createDocumentFragment();
     const end = Math.min(index + CHUNK_SIZE, tracks.length);
     for (; index < end; index++) {
-      fragment.appendChild(buildTrackRow(tracks[index], index, tracks));
+      fragment.appendChild(buildTrackRow(tracks[index], index, tracks, currentPlaylistId));
     }
     trackTbody.appendChild(fragment);
     if (index < tracks.length) {
@@ -220,13 +265,18 @@ export function renderTracksInContainer(tracks: Track[], container: HTMLElement,
     favBtn?.addEventListener("click", async (e) => {
       e.stopPropagation();
       if (isEcstasyView) {
-        await invoke("toggle_ecstasy", { trackId: t.id });
+        const isExt = await invoke<boolean>("toggle_ecstasy", { trackId: t.id });
+        t.is_ecstasy = isExt;
+        const targetInAll = allTracks.find((x) => x.id === t.id || x.path === t.path);
+        if (targetInAll) targetInAll.is_ecstasy = isExt;
         tracksCallbacks.reloadEcstasy?.();
       } else {
-        await invoke("toggle_favorite", { targetType: "track", targetId: t.id });
+        const isFav = await invoke<boolean>("toggle_favorite", { targetType: "track", targetId: t.id });
+        t.is_favorite = isFav;
+        const targetInAll = allTracks.find((x) => x.id === t.id || x.path === t.path);
+        if (targetInAll) targetInAll.is_favorite = isFav;
         tracksCallbacks.reloadFavorites?.();
       }
-      loadLibrary();
     });
 
     tr.addEventListener("dblclick", () => {

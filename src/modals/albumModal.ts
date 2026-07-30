@@ -72,10 +72,15 @@ export function closeAlbumModal() {
   pendingAlbumOnlineResult = null;
 }
 
+let onDeleteAlbumCallback: ((album: AlbumSummary) => Promise<void>) | null = null;
+
 export function setupAlbumModalEvents(
   fetchOnlineMetadataFn: (artist: string, title: string) => Promise<OnlineMetadataResult | null>,
-  onSaved?: () => Promise<void>
+  onSaved?: () => Promise<void>,
+  onDeleteAlbum?: (album: AlbumSummary) => Promise<void>
 ) {
+  if (onDeleteAlbum) onDeleteAlbumCallback = onDeleteAlbum;
+
   const albumTitleInput = $<HTMLInputElement>("album-input-title");
   const albumArtistInput = $<HTMLInputElement>("album-input-artist");
   const albumYearInput = $<HTMLInputElement>("album-input-year");
@@ -86,6 +91,14 @@ export function setupAlbumModalEvents(
 
   $("album-modal-close")?.addEventListener("click", closeAlbumModal);
   $("album-modal-cancel")?.addEventListener("click", closeAlbumModal);
+
+  $("album-modal-delete")?.addEventListener("click", async () => {
+    if (activeModalAlbum && onDeleteAlbumCallback) {
+      const albumToDelete = activeModalAlbum;
+      closeAlbumModal();
+      await onDeleteAlbumCallback(albumToDelete);
+    }
+  });
 
   $("btn-album-fetch-online")?.addEventListener("click", async () => {
     const btn = $<HTMLButtonElement>("btn-album-fetch-online");

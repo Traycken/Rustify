@@ -20,7 +20,7 @@ import { escapeHtml } from "../utils/formatting";
 
 export interface AlbumsTabCallbacks {
   switchView: (view: string) => void;
-  renderTracks: (tracks: Track[]) => void;
+  renderTracks: (tracks: Track[], playlistId?: string) => void;
   pushNavState: (state: NavState) => void;
   openAlbumModal: (album: AlbumSummary) => void;
   openGenericContextMenu: (e: MouseEvent, target: ContextTarget) => void;

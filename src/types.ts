@@ -165,6 +165,21 @@ export interface RadioInput {
   is_video: boolean;
 }
 
+export interface ChannelLiveStreamItem {
+  id: string;
+  title: string;
+  url: string;
+  thumbnail_url?: string | null;
+}
+
+export interface RadioOnlineMetadataResult {
+  name?: string | null;
+  genre?: string | null;
+  country?: string | null;
+  cover_url?: string | null;
+  is_video: boolean;
+}
+
 export interface PlayerState {
   current_track: Track | null;
   is_playing: boolean;
@@ -246,27 +261,54 @@ export interface ContextTarget {
   genreTracks?: Track[];
   playlistId?: string;
   playlistName?: string;
+  currentPlaylistId?: string;
+}
+
+export interface MoodPlaylistOption {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  targetBpmMin?: number;
+  targetBpmMax?: number;
+  favoredGenres: string[];
+  penalizedGenres: string[];
+  requireInstrumental?: boolean;
+  energyTarget: "low" | "medium" | "high" | "any";
+}
+
+export interface MoodDefinition {
+  id: string;
+  emoji: string;
+  label: string;
+  description: string;
+  tempoAdvice: string;
+  playlists: MoodPlaylistOption[];
 }
 
 export interface NavState {
-  type: "view" | "artist" | "album" | "genre" | "tempo" | "search";
+  type: "view" | "artist" | "album" | "genre" | "tempo" | "mood" | "search";
   view: string;
   artistSummary?: ArtistSummary;
   albumName?: string;
   albumArtist?: string;
   genreName?: string;
   tempoLabel?: string;
+  moodId?: string;
   searchQuery?: string;
 }
 
 export interface OnlineMetadataResult {
-  title: string;
-  artist: string;
-  album: string;
-  genre: string;
-  year: number;
-  coverUrl: string | null;
-  coverBase64: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  genre?: string | null;
+  year?: number | null;
+  coverUrl?: string | null;
+  coverBase64?: string | null;
+  cover_base64?: string | null;
+  previewUrl?: string | null;
+  preview_url?: string | null;
   source: string;
 }
 
