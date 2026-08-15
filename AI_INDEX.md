@@ -48,6 +48,7 @@ Rustify/
         ├── artistsTab.ts       # Grille Artistes Solo vs Groupes & bannières
         ├── genresTab.ts        # Grille des genres & découpage multi-genres
         ├── tempoTab.ts         # Cartes Tempo BPM & analyseur audio batch
+        ├── yearsTab.ts         # Cartes Années & Décennies
         ├── playlistsTab.ts     # Playlists personnalisées & système
         ├── radiosTab.ts        # Radios en direct audio/vidéo & statut LIVE/OFF
         ├── recentsTab.ts       # Historique des 100 dernières écoutes
@@ -96,6 +97,7 @@ Rustify/
 - **`artistsTab.ts`** : `loadArtists`, `renderArtistsGrid`, `openArtistView`, `openArtistByName`, `isArtistGroup`, `fetchBandMembersAndBio`, `renderArtistBannerExtras`.
 - **`genresTab.ts`** : `loadGenres`, `filterByGenre`, `parseGenres`.
 - **`tempoTab.ts`** : `loadTempo`, `filterByTempo`, `getTempoBucket`, `runBpmBatchAnalysis`.
+- **`yearsTab.ts`** : `loadYears`, `filterByYear`, `getDecadeLabel`.
 - **`playlistsTab.ts`** : `loadPlaylists()`. Gère l'affichage séparé des Playlists Systèmes (Auto-remplies) et des Playlists Créées (Personnalisées).
 - **`radiosTab.ts`** : `loadRadios`, `playRadio`, `openRadioModal`, `openRadioLivesModal`, `initRadioEvents`, `syncRadioAudioDevice`. Gère les radios audio, la détection auto des métadonnées, le sélecteur multi-lives en direct et flux streaming vidéo (YouTube @profil/live & Twitch).
 - **`recentsTab.ts`** : `loadRecents`.

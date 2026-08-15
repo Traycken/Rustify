@@ -80,7 +80,7 @@ export function renderAdvancedMetadataBox(track: Track) {
   }
 }
 
-export async function openMetadataModal(track: Track, onLibraryReload?: () => Promise<void>) {
+export async function openMetadataModal(track: Track, onTrackUpdated?: (track: Track) => Promise<void> | void) {
   activeModalTrack = track;
   pendingOnlineResult = null;
 
@@ -145,7 +145,7 @@ export async function openMetadataModal(track: Track, onLibraryReload?: () => Pr
       const updatedTrack = await invoke<Track>("analyze_track_bpm", { trackId: track.id });
       activeModalTrack = updatedTrack;
       renderAdvancedMetadataBox(updatedTrack);
-      if (onLibraryReload) await onLibraryReload();
+      if (onTrackUpdated) await onTrackUpdated(updatedTrack);
     } catch (err) {
       console.error("Erreur d'analyse BPM :", err);
       await appAlert(`Échec de l'analyse BPM : ${err}`);
@@ -411,7 +411,7 @@ export async function enrichLibraryInBatch(tracks: Track[], onDone?: () => Promi
 
 let onDeleteTrackCallback: ((track: Track) => Promise<void>) | null = null;
 
-export function setupMetadataModalEvents(onSaved?: () => Promise<void>, onDeleteTrack?: (track: Track) => Promise<void>) {
+export function setupMetadataModalEvents(onSaved?: (track: Track) => Promise<void> | void, onDeleteTrack?: (track: Track) => Promise<void>) {
   if (onDeleteTrack) onDeleteTrackCallback = onDeleteTrack;
 
   const metaTitleInput = $<HTMLInputElement>("meta-input-title");
@@ -512,7 +512,7 @@ export function setupMetadataModalEvents(onSaved?: () => Promise<void>, onDelete
     const dislikes = dislikesInput ? parseInt(dislikesInput.value, 10) || 0 : 0;
 
     try {
-      await invoke("save_online_metadata", {
+      const updatedTrack = await invoke<Track>("save_online_metadata", {
         trackId: activeModalTrack.id,
         title,
         artist,
@@ -525,7 +525,7 @@ export function setupMetadataModalEvents(onSaved?: () => Promise<void>, onDelete
       });
 
       closeMetadataModal();
-      if (onSaved) await onSaved();
+      if (onSaved) await onSaved(updatedTrack);
     } catch (e) {
       console.error("Erreur enregistrement métadonnées", e);
       await appAlert(`Erreur d'enregistrement : ${e}`);

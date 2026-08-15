@@ -417,6 +417,7 @@ export async function loadAppSettings() {
     const autostartEl = $<HTMLInputElement>("setting-autostart");
     const trayEl = $<HTMLInputElement>("setting-minimize-to-tray");
     const shortcutsEl = $<HTMLInputElement>("setting-global-shortcuts");
+    const discordRpcEl = $<HTMLInputElement>("setting-discord-rpc");
 
     const scPlay = $<HTMLInputElement>("sc-input-play");
     const scNext = $<HTMLInputElement>("sc-input-next");
@@ -427,6 +428,8 @@ export async function loadAppSettings() {
     if (autostartEl) autostartEl.checked = settings.autostart === "true";
     if (trayEl) trayEl.checked = settings.minimize_to_tray === "true";
     if (shortcutsEl) shortcutsEl.checked = settings.global_shortcuts_enabled === "true";
+    if (discordRpcEl) discordRpcEl.checked = settings.discord_rpc_enabled === "true";
+
 
     currentShortcutPlay = settings.shortcut_play_pause || "MediaPlayPause";
     currentShortcutNext = settings.shortcut_next || "MediaTrackNext";
@@ -511,6 +514,7 @@ export function initSettingsEvents() {
   const autostartEl = $<HTMLInputElement>("setting-autostart");
   const trayEl = $<HTMLInputElement>("setting-minimize-to-tray");
   const shortcutsEl = $<HTMLInputElement>("setting-global-shortcuts");
+  const discordRpcEl = $<HTMLInputElement>("setting-discord-rpc");
   const btnSaveSc = $("btn-save-shortcuts");
   const btnResetSc = $("btn-reset-shortcuts");
 
@@ -524,7 +528,13 @@ export function initSettingsEvents() {
     await invoke("save_app_setting", { key: "minimize_to_tray", value: enabled ? "true" : "false" });
   });
 
+  discordRpcEl?.addEventListener("change", async () => {
+    const enabled = discordRpcEl.checked;
+    await invoke("save_app_setting", { key: "discord_rpc_enabled", value: enabled ? "true" : "false" });
+  });
+
   shortcutsEl?.addEventListener("change", async () => {
+
     const enabled = shortcutsEl.checked;
     await invoke("save_app_setting", { key: "global_shortcuts_enabled", value: enabled ? "true" : "false" });
     const configList = $("shortcuts-config-list");

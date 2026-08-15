@@ -6,12 +6,14 @@ mod bpm_analyzer;
 mod commands;
 mod db;
 mod debug_log;
+mod discord_rpc;
 mod downloader;
 mod models;
 mod player;
 mod scanner;
 mod state;
 mod ua_pool;
+
 
 
 use player::PlayerCommand;
@@ -388,7 +390,12 @@ fn main() {
             commands::delete_artist,
             commands::delete_album,
             commands::delete_genre,
+            // ---- Discord Rich Presence ----
+            commands::update_discord_presence,
+            commands::clear_discord_presence,
+            commands::set_discord_rpc_enabled,
         ])
+
 
         .run(tauri::generate_context!())
         .expect("erreur lors de l'exécution de Rustify");

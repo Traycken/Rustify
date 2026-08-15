@@ -393,58 +393,64 @@ export async function openArtistByName(artistName: string) {
   openArtistView(summary);
 }
 
-export async function renderArtistsGrid(artists: ArtistSummary[], container: HTMLElement) {
+let artistsRenderToken = 0;
+
+export function renderArtistsGrid(artists: ArtistSummary[], container: HTMLElement) {
+  const token = ++artistsRenderToken;
   container.innerHTML = "";
-  for (const a of artists) {
-    const card = document.createElement("div");
-    const isEnded = !!a.is_ended;
-    const isGrp = isArtistGroup(a);
-    card.className = "grid-card artist-card" + (isEnded ? " is-ended" : "");
-    const isFav = !!a.is_favorite;
-    const photoUrl = await getCoverDataUrl(a.image_path || null);
-    const photoHtml = photoUrl
-      ? `<img src="${photoUrl}" class="cover-img" alt="${escapeHtml(a.artist)}" />`
-      : `<div class="cover-placeholder"><i class="fa-solid ${isGrp ? "fa-users" : "fa-user"}"></i></div>`;
+  let index = 0;
 
-    const endedTagHtml = isEnded
-      ? `<div class="ended-tag"><i class="fa-solid ${isGrp ? "fa-ban" : "fa-cross"}"></i>${isGrp ? "Dissous" : "Décédé"}</div>`
-      : "";
-
-    card.innerHTML = `
-      <button class="card-fav-btn ${isFav ? "is-fav" : ""}" title="Favori">
-        <i class="${isFav ? "fa-solid fa-heart" : "fa-regular fa-heart"}"></i>
-      </button>
-      ${photoHtml}
-      <div class="title">${escapeHtml(a.artist)}</div>
-      <div class="subtitle">
-        <span class="type-tag">${isGrp ? '<i class="fa-solid fa-users"></i> Groupe' : '<i class="fa-solid fa-user"></i> Solo'}</span>
-        · ${a.track_count} morceau(x)
-      </div>
-      ${endedTagHtml}
-    `;
-
-    const favBtn = card.querySelector(".card-fav-btn");
-    favBtn?.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const newFav = await invoke<boolean>("toggle_favorite", { targetType: "artist", targetId: a.artist });
-      a.is_favorite = newFav;
-      favBtn.classList.toggle("is-fav", newFav);
-      const icon = favBtn.querySelector("i");
-      if (icon) icon.className = newFav ? "fa-solid fa-heart" : "fa-regular fa-heart";
-    });
-
-    card.addEventListener("click", () => {
-      openArtistView(a);
-    });
-
-    card.addEventListener("contextmenu", (e) => {
-      artistsCallbacks.openGenericContextMenu?.(e, { type: "artist", artist: a });
-    });
-
-    container.appendChild(card);
-  }
+  const renderChunk = () => {
+    if (token !== artistsRenderToken) return;
+    const fragment = document.createDocumentFragment();
+    const endIndex = Math.min(index + 30, artists.length);
+    for (; index < endIndex; index++) {
+      const a = artists[index];
+      const card = document.createElement("div");
+      const isEnded = !!a.is_ended;
+      const isGrp = isArtistGroup(a);
+      const isFav = !!a.is_favorite;
+      card.className = "grid-card artist-card" + (isEnded ? " is-ended" : "");
+      const endedTagHtml = isEnded
+        ? `<div class="ended-tag"><i class="fa-solid ${isGrp ? "fa-ban" : "fa-cross"}"></i>${isGrp ? "Dissous" : "Décédé"}</div>`
+        : "";
+      card.innerHTML = `
+        <button class="card-fav-btn ${isFav ? "is-fav" : ""}" title="Favori">
+          <i class="${isFav ? "fa-solid fa-heart" : "fa-regular fa-heart"}"></i>
+        </button>
+        <div class="cover-placeholder"><i class="fa-solid ${isGrp ? "fa-users" : "fa-user"}"></i></div>
+        <div class="title">${escapeHtml(a.artist)}</div>
+        <div class="subtitle"><span class="type-tag">${isGrp ? '<i class="fa-solid fa-users"></i> Groupe' : '<i class="fa-solid fa-user"></i> Solo'}</span> · ${a.track_count} morceau(x)</div>
+        ${endedTagHtml}
+      `;
+      if (a.image_path) {
+        getCoverDataUrl(a.image_path).then((photoUrl) => {
+          if (token !== artistsRenderToken || !photoUrl || !card.isConnected) return;
+          card.querySelector(".cover-placeholder")?.replaceWith(Object.assign(document.createElement("img"), {
+            src: photoUrl, className: "cover-img", alt: a.artist,
+          }));
+        });
+      }
+      const favBtn = card.querySelector(".card-fav-btn");
+      favBtn?.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const newFav = await invoke<boolean>("toggle_favorite", { targetType: "artist", targetId: a.artist });
+        a.is_favorite = newFav;
+        favBtn.classList.toggle("is-fav", newFav);
+        const icon = favBtn.querySelector("i");
+        if (icon) icon.className = newFav ? "fa-solid fa-heart" : "fa-regular fa-heart";
+      });
+      card.addEventListener("click", () => openArtistView(a));
+      card.addEventListener("contextmenu", (e) => {
+        artistsCallbacks.openGenericContextMenu?.(e, { type: "artist", artist: a });
+      });
+      fragment.appendChild(card);
+    }
+    container.appendChild(fragment);
+    if (index < artists.length) requestAnimationFrame(renderChunk);
+  };
+  requestAnimationFrame(renderChunk);
 }
-
 export async function loadArtists() {
   const artists = await invoke<ArtistSummary[]>("get_artists");
 

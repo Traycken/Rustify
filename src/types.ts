@@ -34,6 +34,16 @@ export interface DebugLogEntryLike {
   [key: string]: unknown;
 }
 
+export interface DiscordPresencePayload {
+  details: string;
+  state: string;
+  is_playing: boolean;
+  is_radio: boolean;
+  position_secs?: number | null;
+  duration_secs?: number | null;
+}
+
+
 export interface Track {
   id: string;
   path: string;
@@ -287,13 +297,14 @@ export interface MoodDefinition {
 }
 
 export interface NavState {
-  type: "view" | "artist" | "album" | "genre" | "tempo" | "mood" | "search";
+  type: "view" | "artist" | "album" | "genre" | "tempo" | "mood" | "search" | "year";
   view: string;
   artistSummary?: ArtistSummary;
   albumName?: string;
   albumArtist?: string;
   genreName?: string;
   tempoLabel?: string;
+  yearLabel?: string;
   moodId?: string;
   searchQuery?: string;
 }

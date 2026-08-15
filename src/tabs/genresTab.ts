@@ -88,44 +88,54 @@ export function filterByGenre(genreName: string) {
   });
 }
 
+let genresRenderToken = 0;
+
 export function loadGenres() {
-  const genreMap = new Map<string, Track[]>();
-
-  for (const t of allTracks) {
-    const genres = parseGenres(t.genre, t.tags);
-    for (const g of genres) {
-      if (!genreMap.has(g)) {
-        genreMap.set(g, []);
-      }
-      genreMap.get(g)!.push(t);
-    }
-  }
-
   const container = $("view-genres");
   if (!container) return;
+  const token = ++genresRenderToken;
+  const genreMap = new Map<string, Track[]>();
+  let trackIndex = 0;
   container.innerHTML = "";
 
-  const sortedGenres = Array.from(genreMap.keys()).sort((a, b) =>
-    a.localeCompare(b, "fr", { sensitivity: "base" })
-  );
+  const collectChunk = () => {
+    if (token !== genresRenderToken) return;
+    const endIndex = Math.min(trackIndex + 150, allTracks.length);
+    for (; trackIndex < endIndex; trackIndex++) {
+      const track = allTracks[trackIndex];
+      for (const genre of parseGenres(track.genre, track.tags)) {
+        const tracks = genreMap.get(genre) || [];
+        tracks.push(track);
+        genreMap.set(genre, tracks);
+      }
+    }
+    if (trackIndex < allTracks.length) {
+      requestAnimationFrame(collectChunk);
+      return;
+    }
 
-  for (const g of sortedGenres) {
-    const tracks = genreMap.get(g)!;
-    const card = document.createElement("div");
-    card.className = "genre-card";
-    card.innerHTML = `
-      <div class="genre-title">${escapeHtml(g)}</div>
-      <div class="genre-count">${tracks.length} morceau(x)</div>
-      <i class="fa-solid fa-tags genre-bg-icon"></i>
-    `;
-
-    card.addEventListener("click", () => {
-      filterByGenre(g);
-    });
-    card.addEventListener("contextmenu", (e) => {
-      genresCallbacks.openGenericContextMenu?.(e, { type: "genre", genreName: g, genreTracks: tracks });
-    });
-
-    container.appendChild(card);
-  }
+    const genres = Array.from(genreMap.keys()).sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+    let genreIndex = 0;
+    const renderChunk = () => {
+      if (token !== genresRenderToken) return;
+      const fragment = document.createDocumentFragment();
+      const endGenreIndex = Math.min(genreIndex + 40, genres.length);
+      for (; genreIndex < endGenreIndex; genreIndex++) {
+        const genre = genres[genreIndex];
+        const tracks = genreMap.get(genre)!;
+        const card = document.createElement("div");
+        card.className = "genre-card";
+        card.innerHTML = `<div class="genre-title">${escapeHtml(genre)}</div><div class="genre-count">${tracks.length} morceau(x)</div><i class="fa-solid fa-tags genre-bg-icon"></i>`;
+        card.addEventListener("click", () => filterByGenre(genre));
+        card.addEventListener("contextmenu", (event) => {
+          genresCallbacks.openGenericContextMenu?.(event, { type: "genre", genreName: genre, genreTracks: tracks });
+        });
+        fragment.appendChild(card);
+      }
+      container.appendChild(fragment);
+      if (genreIndex < genres.length) requestAnimationFrame(renderChunk);
+    };
+    requestAnimationFrame(renderChunk);
+  };
+  requestAnimationFrame(collectChunk);
 }

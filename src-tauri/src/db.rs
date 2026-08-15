@@ -135,6 +135,7 @@ pub fn init_connection() -> anyhow::Result<Connection> {
     let _ = conn.execute("ALTER TABLE artist_metadata ADD COLUMN external_ids TEXT", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN permanent_score REAL NOT NULL DEFAULT 0.0", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN is_ecstasy INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("UPDATE tracks SET is_ecstasy = 1 WHERE id IN (SELECT target_id FROM favorites WHERE target_type = 'ecstasy') OR path IN (SELECT target_id FROM favorites WHERE target_type = 'ecstasy')", []);
     let _ = conn.execute("UPDATE tracks SET artist = TRIM(artist), album_artist = TRIM(album_artist), album = TRIM(album)", []);
 
     // Table de statistiques des User-Agent par API
@@ -356,7 +357,7 @@ pub fn upsert_track(conn: &Connection, t: &Track) -> anyhow::Result<()> {
             title=excluded.title, artist=excluded.artist, album=excluded.album,
             album_artist=excluded.album_artist, genre=excluded.genre, year=excluded.year,
             track_no=excluded.track_no, duration_secs=excluded.duration_secs, has_cover=excluded.has_cover,
-            cover_path=excluded.cover_path, is_ecstasy=excluded.is_ecstasy, permanent_score=excluded.permanent_score,
+            cover_path=excluded.cover_path, permanent_score=excluded.permanent_score,
             bpm=COALESCE(excluded.bpm, tracks.bpm),
             bpm_is_official=CASE WHEN excluded.bpm IS NOT NULL THEN excluded.bpm_is_official ELSE tracks.bpm_is_official END",
         params![t.id, t.path, t.title, t.artist, t.album, t.album_artist, t.genre, t.year, t.track_no, t.duration_secs, t.has_cover as i32, t.cover_path, t.likes, t.dislikes, t.is_favorite as i32, t.is_ecstasy as i32, t.manual_select_count, t.play_count, t.skip_count, t.total_listen_secs, perm_score, t.bpm, t.bpm_is_official as i32],
@@ -997,7 +998,7 @@ pub fn get_track_live_stats(conn: &Connection, track_id: &str) -> anyhow::Result
         let is_fav_val: i32 = r.get(2).unwrap_or(0);
         let is_fav = is_fav_val != 0 || is_favorite(conn, "track", track_id);
         let is_ecstasy_val: i32 = r.get(3).unwrap_or(0);
-        let is_ecstasy = is_ecstasy_val != 0;
+        let is_ecstasy = is_ecstasy_val != 0 || is_favorite(conn, "ecstasy", track_id);
         Ok((likes, dislikes, is_fav, is_ecstasy))
     })?;
     Ok(res)
@@ -1586,11 +1587,13 @@ pub fn update_smart_session(
         },
     )?;
 
-    // Mettre à jour les IDs récents (max 10)
+    // Mettre à jour les IDs récents (max 40 pour éviter les répétitions)
     recent_ids.push(track_id.to_string());
-    if recent_ids.len() > 10 {
+    if recent_ids.len() > 40 {
         recent_ids.remove(0);
     }
+
+    let _ = add_play_history(conn, track_id);
 
     match event_type {
         "complete" => {
@@ -1719,7 +1722,6 @@ pub fn get_next_smart_track(
 
     let exclude_set: std::collections::HashSet<&String> = exclude_ids.iter().collect();
     let queue_set: std::collections::HashSet<&String> = queue_ids.iter().collect();
-    let session_recent_set: std::collections::HashSet<&String> = session.recent_track_ids.iter().collect();
 
     // 1. Pénalités temporaires glissantes sur 24H enregistrées en base
     let penalties_24h = get_24h_play_penalties(conn).unwrap_or_default();
@@ -1749,15 +1751,29 @@ pub fn get_next_smart_track(
                 score -= pen;
             }
 
-            // Bonus de score temporaire +100 si la piste est dans la file d'attente
+            // Bonus de score temporaire +100 si la piste est dans la file d'attente utilisateur
             let is_in_queue = queue_set.contains(&t.id) || queue_set.contains(&t.path);
             if is_in_queue {
                 score += 100.0;
             }
 
-            // Pénalité supplémentaire pour la file de lecture très récente dans cette session (ignorée si en file d'attente explicite)
-            if !is_in_queue && (exclude_set.contains(&t.id) || exclude_set.contains(&t.path) || session_recent_set.contains(&t.id)) {
-                score -= 120.0;
+            // Pénalité stricte et dégressive pour l'historique récent de la session (si pas en file explicite)
+            if !is_in_queue {
+                if let Some(pos) = session.recent_track_ids.iter().rposition(|id| id == &t.id || id == &t.path) {
+                    let total_recent = session.recent_track_ids.len();
+                    let recency_index = total_recent - 1 - pos; // 0 = le plus récent, 1 = le 2e plus récent...
+                    
+                    // Exclusion quasi-absolue pour les 3 morceaux les plus récents (et le morceau en cours)
+                    if recency_index < 3 && pool_tracks.len() > 3 {
+                        score -= 5000.0;
+                    } else {
+                        // Pénalité dégressive selon la récence
+                        let pen_score = (120.0 - (recency_index as f64 * 15.0)).max(20.0);
+                        score -= pen_score;
+                    }
+                } else if exclude_set.contains(&t.id) || exclude_set.contains(&t.path) {
+                    score -= 5000.0;
+                }
             }
 
             // Contexte session (genre / artiste / BPM)
@@ -1809,14 +1825,11 @@ pub fn get_next_smart_track(
 
             // ── Règles spéciales Extase (Favoris+ / Transe / Bouffée d'oxygène) ──
             if t.is_ecstasy {
-                // Règle A : Ne JAMAIS commencer une liste/session aléatoire par une musique Extase
                 if session.recent_track_ids.len() < 3 {
                     score -= 9999.0;
                 } else if consec_skips >= 3 {
-                    // Règle C : Bouffée d'oxygène après de multiples skips (apnée musicale)
                     score += 90.0;
                 } else {
-                    // Règle B : Doit être rare en lecture aléatoire normale
                     score -= 40.0;
                 }
             }
@@ -1838,13 +1851,14 @@ pub fn get_next_smart_track(
         }
     }
 
-    // 5. Échantillonnage aléatoire pondéré (Weighted Random Selection)
+    // 5. Échantillonnage aléatoire pondéré (Weighted Random Selection avec température adoucie)
     let max_score = candidate_scores
         .iter()
         .map(|(_, s)| *s)
         .fold(f64::NEG_INFINITY, f64::max);
 
-    const TEMP: f64 = 5.0;
+    // Température plus élevée (25.0 au lieu de 5.0) pour éviter que le titre #1 n'écrase totalement tous les autres
+    const TEMP: f64 = 25.0;
     let weights: Vec<f64> = candidate_scores
         .iter()
         .map(|(_, score)| {

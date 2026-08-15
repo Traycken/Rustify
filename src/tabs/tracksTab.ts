@@ -39,6 +39,8 @@ export function setTracksTabCallbacks(callbacks: Partial<TracksTabCallbacks>) {
 }
 
 let trackRenderToken = 0;
+let renderedTracks: Track[] = [];
+let renderedPlaylistId: string | undefined;
 
 export function buildTrackRow(t: Track, i: number, tracks: Track[], currentPlaylistId?: string): HTMLTableRowElement {
   const tr = document.createElement("tr");
@@ -149,12 +151,14 @@ export function renderTracks(tracks: Track[], currentPlaylistId?: string) {
   }
 
   const token = ++trackRenderToken;
+  renderedTracks = tracks;
+  renderedPlaylistId = currentPlaylistId;
   trackTbody.innerHTML = "";
   emptyState.hidden = tracks.length > 0;
 
   if (tracks.length === 0) return;
 
-  const CHUNK_SIZE = 150;
+  const CHUNK_SIZE = 50;
   let index = 0;
 
   function renderChunk() {
@@ -171,6 +175,20 @@ export function renderTracks(tracks: Track[], currentPlaylistId?: string) {
   }
 
   requestAnimationFrame(renderChunk);
+}
+
+/** Met à jour uniquement la ligne visible correspondant à une piste modifiée. */
+export function updateRenderedTrack(updatedTrack: Track) {
+  const index = renderedTracks.findIndex((track) => track.id === updatedTrack.id || track.path === updatedTrack.path);
+  if (index < 0) return;
+
+  Object.assign(renderedTracks[index], updatedTrack);
+  const trackTbody = $("track-tbody");
+  if (!trackTbody) return;
+  const row = Array.from(trackTbody.querySelectorAll<HTMLTableRowElement>("tr")).find(
+    (element) => element.dataset.id === String(updatedTrack.id)
+  );
+  if (row) row.replaceWith(buildTrackRow(renderedTracks[index], index, renderedTracks, renderedPlaylistId));
 }
 
 export function filterBySimilarTrack(refTrack: Track) {

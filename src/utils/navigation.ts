@@ -25,10 +25,12 @@ export interface NavCallbacks {
   filterByAlbum: (album: string, artist: string) => void;
   filterByGenre: (genre: string) => void;
   filterByTempo: (tempo: string) => void;
+  filterByYear: (year: string) => void;
   loadAlbums: () => void;
   loadArtists: () => void;
   loadGenres: () => void;
   loadTempo: () => void;
+  loadYears: () => void;
   loadMood: () => void;
   loadPlaylists: () => void;
   loadRecents: () => void;
@@ -61,6 +63,7 @@ export function pushNavState(state: NavState) {
       curr.albumName === state.albumName &&
       curr.genreName === state.genreName &&
       curr.tempoLabel === state.tempoLabel &&
+      curr.yearLabel === state.yearLabel &&
       curr.searchQuery === state.searchQuery
     ) {
       return;
@@ -103,17 +106,23 @@ export function restoreNavState(state: NavState) {
     navCallbacks.filterByGenre?.(state.genreName);
   } else if (state.type === "tempo" && state.tempoLabel) {
     navCallbacks.filterByTempo?.(state.tempoLabel);
+  } else if (state.type === "year" && state.yearLabel) {
+    navCallbacks.filterByYear?.(state.yearLabel);
   } else {
     switchView(state.view);
     if (state.view === "albums") navCallbacks.loadAlbums?.();
     if (state.view === "artists") navCallbacks.loadArtists?.();
     if (state.view === "genres") navCallbacks.loadGenres?.();
     if (state.view === "tempo") navCallbacks.loadTempo?.();
+    if (state.view === "years") navCallbacks.loadYears?.();
     if (state.view === "mood") navCallbacks.loadMood?.();
     if (state.view === "playlists") navCallbacks.loadPlaylists?.();
     if (state.view === "recents") navCallbacks.loadRecents?.();
     if (state.view === "favorites") navCallbacks.loadFavorites?.();
-    if (state.view === "ecstasy") navCallbacks.loadEcstasyTracks?.();
+    if (state.view === "ecstasy") {
+      switchView("favorites");
+      navCallbacks.loadEcstasyTracks?.();
+    }
     if (state.view === "queue") navCallbacks.loadQueue?.();
     if (state.view === "settings") navCallbacks.loadSettings?.();
   }
@@ -139,32 +148,33 @@ export function goNavForward() {
 }
 
 export function switchView(view: string) {
+  const actualView = view === "ecstasy" ? "favorites" : view;
   document.querySelectorAll(".view").forEach((v) => ((v as HTMLElement).hidden = true));
   document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
   
-  const targetView = $(`view-${view}`);
+  const targetView = $(`view-${actualView}`);
   if (targetView) targetView.hidden = false;
   
-  document.querySelector(`[data-view="${view}"]`)?.classList.add("active");
+  document.querySelector(`[data-view="${actualView}"]`)?.classList.add("active");
   const titles: Record<string, string> = {
     tracks: "Bibliothèque",
     albums: "Albums",
     artists: "Artistes",
     genres: "Genres",
     tempo: "Tempo",
+    years: "Année",
     mood: "Humeur & Recommandations",
     playlists: "Playlists",
     queue: "File d'attente",
     recents: "Récents",
     favorites: "Favoris ⭐",
-    ecstasy: "Extase 💖",
     downloader: "Téléchargeur",
     radios: "Radios",
     settings: "Paramètres",
   };
 
   const viewTitle = $("view-title");
-  if (viewTitle) viewTitle.textContent = titles[view] ?? view;
+  if (viewTitle) viewTitle.textContent = titles[actualView] ?? actualView;
 
   const artistHeader = $("artist-header");
   if (artistHeader && view !== "tracks") {

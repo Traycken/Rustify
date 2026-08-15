@@ -70,6 +70,14 @@ export interface PlayerEngineCallbacks {
 }
 
 let playerCallbacks: Partial<PlayerEngineCallbacks> = {};
+// Évite de confondre l'état vide transitoire du démarrage avec une fin de morceau.
+let smartTrackWasActive = false;
+// Garde : true pendant la fenêtre de chargement d'une nouvelle piste.
+// Bloque tout déclenchement de fin-de-piste Smart Shuffle pendant cet état transitoire.
+let isLoadingTrack = false;
+// Timestamp (ms) auquel la piste courante a commencé à être confirmée en lecture.
+// Permet de vérifier qu'un minimum de lecture a eu lieu avant de valider une fin de piste.
+let trackConfirmedPlayingAt = 0;
 
 export function setPlayerEngineCallbacks(callbacks: Partial<PlayerEngineCallbacks>) {
   playerCallbacks = { ...playerCallbacks, ...callbacks };
@@ -80,10 +88,14 @@ export async function playFromQueue(queue: Track[], index: number, isManual: boo
     playerCallbacks.stopRadio?.();
     const upcoming = queue.slice(index + 1);
     setCurrentQueue(upcoming);
+    // Signaler le début du chargement AVANT l'invoke pour bloquer
+    // toute détection de fin-de-piste pendant l'état transitoire.
+    isLoadingTrack = true;
     await invoke("play_track", { queue, startIndex: index, isManual });
     await refreshPlayerState();
   } catch (err) {
     console.error("Erreur lecture piste :", err);
+    isLoadingTrack = false;
   }
 }
 
@@ -187,14 +199,20 @@ export async function startSmartShuffleForPlaylist(playlistId: string, playlistN
 
     await setSmartShuffleState(true);
 
-    setCurrentQueue([...tracks]);
+    // Ne pas surcharger currentQueue pour laisser le moteur Smart Shuffle s'exécuter dynamiquement sur la playlist
+    setCurrentQueue([]);
 
     const session = await invoke<SmartSession>("get_or_create_smart_session");
-    const excludeIds = session.recent_track_ids ?? [];
+    const excludeIds = [...(session.recent_track_ids ?? [])];
+    if (lastPlayerState?.current_track) {
+      excludeIds.push(lastPlayerState.current_track.id);
+      excludeIds.push(lastPlayerState.current_track.path);
+    }
     const firstTrack = await invoke<Track>("get_next_smart_track", { excludeIds, queueIds: [] }).catch(() => tracks[0]);
 
     if (firstTrack) {
       await playFromSmartTrack(firstTrack);
+      await calculateNextSmartTrack();
     } else {
       await playFromQueue(tracks, 0);
     }
@@ -216,7 +234,17 @@ export async function calculateNextSmartTrack() {
       return;
     }
     const session = await invoke<SmartSession>("get_or_create_smart_session");
-    const excludeIds = session.recent_track_ids ?? [];
+    const excludeIds = [...(session.recent_track_ids ?? [])];
+
+    // Exclure la piste actuellement en cours de lecture pour éviter qu'elle ne soit recalculée en boucle
+    if (lastPlayerState?.current_track) {
+      if (!excludeIds.includes(lastPlayerState.current_track.id)) {
+        excludeIds.push(lastPlayerState.current_track.id);
+      }
+      if (!excludeIds.includes(lastPlayerState.current_track.path)) {
+        excludeIds.push(lastPlayerState.current_track.path);
+      }
+    }
 
     if (activeMoodPlaylistOption) {
       const moodTrack = getOrientedMoodTrack(excludeIds);
@@ -248,11 +276,14 @@ export async function playFromSmartTrack(track: Track) {
         currentQueue.splice(idx, 1);
       }
     }
+    // Signaler le début du chargement avant l'invoke
+    isLoadingTrack = true;
     await invoke("play_track", { queue: [track], startIndex: 0, isManual: false });
     setLastKnownTrackId(track.id);
     setLastKnownTrackForSkip(track);
     await refreshPlayerState();
   } catch {
+    isLoadingTrack = false;
     /* silencieux */
   }
 }
@@ -465,8 +496,10 @@ export function applyPlayerState(state: PlayerState) {
   const isPlaying = state.is_playing || isRadioPlaying;
 
   updateOverlayUI(state, activeRadio, radioAudioEl, isRadioPlaying);
+  syncDiscordPresence(state, activeRadio, radioAudioEl, isRadioActive, isRadioPlaying);
 
   if (btnPlay) {
+
     btnPlay.innerHTML = isPlaying
       ? '<i class="fa-solid fa-pause"></i>'
       : '<i class="fa-solid fa-play"></i>';
@@ -478,6 +511,25 @@ export function applyPlayerState(state: PlayerState) {
   if (overlayBtnShuffle) overlayBtnShuffle.classList.toggle("active", smartShuffleActive);
 
   const newTrackId = state.current_track?.id ?? null;
+
+  // Lever la garde de chargement dès qu'on reçoit une piste valide dans l'état
+  if (newTrackId && isLoadingTrack) {
+    isLoadingTrack = false;
+  }
+
+  if (smartShuffleActive && newTrackId) {
+    smartTrackWasActive = true;
+  }
+
+  // Suivre quand la piste est réellement en lecture (pour la garde de durée minimale)
+  if (state.is_playing && newTrackId) {
+    if (trackConfirmedPlayingAt === 0) {
+      trackConfirmedPlayingAt = performance.now();
+    }
+  } else if (!newTrackId) {
+    trackConfirmedPlayingAt = 0;
+  }
+
   if (newTrackId) {
     if (currentQueue.length > 0 && (currentQueue[0].id === newTrackId || currentQueue[0].path === state.current_track?.path)) {
       currentQueue.shift();
@@ -490,17 +542,23 @@ export function applyPlayerState(state: PlayerState) {
   }
 
   if (smartShuffleActive && lastKnownTrackId && newTrackId && lastKnownTrackId !== newTrackId) {
-    const oldTrack = lastKnownTrackForSkip;
-    if (oldTrack) {
-      invoke("update_smart_session", {
-        trackId: oldTrack.id,
-        eventType: "complete",
-        trackGenre: oldTrack.genre || null,
-        trackArtist: oldTrack.artist || null,
-        trackBpm: oldTrack.bpm ?? null,
-      }).catch(() => {});
+    // Nouveau titre détecté : ne mettre à jour la session que si on n'est pas
+    // en phase de chargement (évite le double-fire lors des transitions rapides)
+    if (!isLoadingTrack) {
+      const oldTrack = lastKnownTrackForSkip;
+      if (oldTrack) {
+        invoke("update_smart_session", {
+          trackId: oldTrack.id,
+          eventType: "complete",
+          trackGenre: oldTrack.genre || null,
+          trackArtist: oldTrack.artist || null,
+          trackBpm: oldTrack.bpm ?? null,
+        }).catch(() => {});
+      }
+      calculateNextSmartTrack();
     }
-    calculateNextSmartTrack();
+    // Réinitialiser le timer de lecture pour la nouvelle piste
+    trackConfirmedPlayingAt = 0;
   }
   if (newTrackId) {
     setLastKnownTrackId(newTrackId);
@@ -509,7 +567,29 @@ export function applyPlayerState(state: PlayerState) {
 
   playerCallbacks.onStateApplied?.();
 
-  if (smartShuffleActive && !state.current_track && !state.is_playing && nextSmartTrack) {
+  // Déclenchement de la piste suivante Smart Shuffle en fin naturelle de morceau.
+  // Gardes obligatoires pour éviter les faux positifs :
+  //   1. `!isLoadingTrack`         : pas d'état transitoire de chargement en cours
+  //   2. `smartTrackWasActive`     : une piste a vraiment joué depuis l'activation
+  //   3. `!state.current_track`    : plus de piste active côté backend
+  //   4. `!state.is_playing`       : le moteur est bien arrêté
+  //   5. durée minimale (2s)       : évite le déclenchement sur un flash d'état vide
+  const minPlayedMs = 2000;
+  const hasPlayedEnough = trackConfirmedPlayingAt > 0
+    ? (performance.now() - trackConfirmedPlayingAt) >= minPlayedMs
+    : lastKnownTrackId !== null; // si on n'a jamais eu de timestamp, on se fie à lastKnownTrackId
+
+  if (
+    !isLoadingTrack &&
+    smartShuffleActive &&
+    smartTrackWasActive &&
+    !state.current_track &&
+    !state.is_playing &&
+    nextSmartTrack &&
+    hasPlayedEnough
+  ) {
+    smartTrackWasActive = false;
+    trackConfirmedPlayingAt = 0;
     const toPlay = nextSmartTrack;
     const finishedTrack = lastKnownTrackForSkip;
     setNextSmartTrack(null);
@@ -632,3 +712,58 @@ export function pollState() {
     }
   }, 1000);
 }
+
+let lastDiscordSignature = "";
+
+export function syncDiscordPresence(
+  state: PlayerState,
+  activeRadio: Radio | null,
+  radioAudioEl: HTMLAudioElement | null,
+  isRadioActive: boolean,
+  isRadioPlaying: boolean
+) {
+  let details = "";
+  let artistState = "";
+  let isPlaying = false;
+  let isRadio = false;
+  let positionSecs: number | null = null;
+  let durationSecs: number | null = null;
+
+  if (isRadioActive && activeRadio) {
+    details = activeRadio.name;
+    artistState = activeRadio.genre ? activeRadio.genre : "Radio en direct";
+    isPlaying = isRadioPlaying;
+    isRadio = true;
+    positionSecs = radioAudioEl ? radioAudioEl.currentTime : 0;
+  } else if (state.current_track) {
+    details = state.current_track.title;
+    artistState = state.current_track.album
+      ? `${state.current_track.artist} — ${state.current_track.album}`
+      : state.current_track.artist;
+    isPlaying = state.is_playing;
+    isRadio = false;
+    positionSecs = state.position_secs;
+    durationSecs = state.current_track.duration_secs;
+  } else {
+    details = "Rustify";
+    artistState = "Parcourt la bibliothèque";
+    isPlaying = false;
+    isRadio = false;
+  }
+
+  const sig = `${details}|${artistState}|${isPlaying}|${isRadio}|${isPlaying ? 0 : Math.round(positionSecs || 0)}`;
+  if (sig === lastDiscordSignature) return;
+  lastDiscordSignature = sig;
+
+  invoke("update_discord_presence", {
+    payload: {
+      details,
+      state: artistState,
+      is_playing: isPlaying,
+      is_radio: isRadio,
+      position_secs: positionSecs,
+      duration_secs: durationSecs,
+    },
+  }).catch(() => {});
+}
+

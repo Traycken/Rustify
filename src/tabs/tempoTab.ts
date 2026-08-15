@@ -140,59 +140,58 @@ export async function runBpmBatchAnalysis() {
   }, 2500);
 }
 
+let tempoRenderToken = 0;
+
 export function loadTempo() {
   const btnAnalyze = $<HTMLButtonElement>("btn-analyze-all-bpm");
   if (btnAnalyze && !btnAnalyze.dataset.bound) {
     btnAnalyze.dataset.bound = "true";
-    btnAnalyze.addEventListener("click", () => {
-      runBpmBatchAnalysis();
-    });
-  }
-
-  const buckets = new Map<string, Track[]>();
-  for (const b of TEMPO_BUCKETS) buckets.set(b.label, []);
-  buckets.set(TEMPO_UNKNOWN_LABEL, []);
-
-  for (const t of allTracks) {
-    const label = getTempoBucketLabel(t.bpm);
-    buckets.get(label)!.push(t);
+    btnAnalyze.addEventListener("click", () => runBpmBatchAnalysis());
   }
 
   const grid = $("grid-tempo") || $("view-tempo");
   if (!grid) return;
+  const token = ++tempoRenderToken;
+  const buckets = new Map<string, Track[]>();
+  for (const bucket of TEMPO_BUCKETS) buckets.set(bucket.label, []);
+  buckets.set(TEMPO_UNKNOWN_LABEL, []);
   grid.innerHTML = "";
+  let trackIndex = 0;
 
-  for (const b of TEMPO_BUCKETS) {
-    const tracks = buckets.get(b.label) || [];
-    if (tracks.length === 0) continue;
+  const collectChunk = () => {
+    if (token !== tempoRenderToken) return;
+    const endIndex = Math.min(trackIndex + 200, allTracks.length);
+    for (; trackIndex < endIndex; trackIndex++) {
+      const track = allTracks[trackIndex];
+      buckets.get(getTempoBucketLabel(track.bpm))!.push(track);
+    }
+    if (trackIndex < allTracks.length) {
+      requestAnimationFrame(collectChunk);
+      return;
+    }
 
-    const card = document.createElement("div");
-    card.className = "genre-card";
-    card.innerHTML = `
-      <div class="genre-title">${escapeHtml(b.label)}</div>
-      <div class="genre-count">${tracks.length} morceau(x)</div>
-      <i class="${b.icon} genre-bg-icon"></i>
-    `;
-
-    card.addEventListener("click", () => {
-      filterByTempo(b.label);
-    });
-
-    grid.appendChild(card);
-  }
-
-  const unknownTracks = buckets.get(TEMPO_UNKNOWN_LABEL) || [];
-  if (unknownTracks.length > 0) {
-    const card = document.createElement("div");
-    card.className = "genre-card";
-    card.innerHTML = `
-      <div class="genre-title">${escapeHtml(TEMPO_UNKNOWN_LABEL)}</div>
-      <div class="genre-count">${unknownTracks.length} morceau(x)</div>
-      <i class="fa-solid fa-question genre-bg-icon"></i>
-    `;
-    card.addEventListener("click", () => {
-      filterByTempo(TEMPO_UNKNOWN_LABEL);
-    });
-    grid.appendChild(card);
-  }
+    const cards = [
+      ...TEMPO_BUCKETS.map((bucket) => ({ label: bucket.label, icon: bucket.icon })),
+      { label: TEMPO_UNKNOWN_LABEL, icon: "fa-solid fa-question" },
+    ].filter(({ label }) => (buckets.get(label)?.length || 0) > 0);
+    let cardIndex = 0;
+    const renderChunk = () => {
+      if (token !== tempoRenderToken) return;
+      const fragment = document.createDocumentFragment();
+      const endCardIndex = Math.min(cardIndex + 20, cards.length);
+      for (; cardIndex < endCardIndex; cardIndex++) {
+        const cardData = cards[cardIndex];
+        const tracks = buckets.get(cardData.label)!;
+        const card = document.createElement("div");
+        card.className = "genre-card";
+        card.innerHTML = `<div class="genre-title">${escapeHtml(cardData.label)}</div><div class="genre-count">${tracks.length} morceau(x)</div><i class="${cardData.icon} genre-bg-icon"></i>`;
+        card.addEventListener("click", () => filterByTempo(cardData.label));
+        fragment.appendChild(card);
+      }
+      grid.appendChild(fragment);
+      if (cardIndex < cards.length) requestAnimationFrame(renderChunk);
+    };
+    requestAnimationFrame(renderChunk);
+  };
+  requestAnimationFrame(collectChunk);
 }

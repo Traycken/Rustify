@@ -33,6 +33,25 @@ export function setCurrentQueue(queue: Track[]) {
 }
 
 export const coverCache = new Map<string, string>();
+const pendingCoverLoads = new Map<string, Promise<string | null>>();
+const coverLoadQueue: Array<() => void> = [];
+let activeCoverLoads = 0;
+const MAX_CONCURRENT_COVER_LOADS = 4;
+
+function scheduleCoverLoad<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      activeCoverLoads++;
+      task().then(resolve, reject).finally(() => {
+        activeCoverLoads--;
+        coverLoadQueue.shift()?.();
+      });
+    };
+
+    if (activeCoverLoads < MAX_CONCURRENT_COVER_LOADS) run();
+    else coverLoadQueue.push(run);
+  });
+}
 
 export async function getCoverDataUrl(coverPath: string | null): Promise<string | null> {
   if (!coverPath) return null;
@@ -40,14 +59,23 @@ export async function getCoverDataUrl(coverPath: string | null): Promise<string 
     return coverPath;
   }
   if (coverCache.has(coverPath)) return coverCache.get(coverPath)!;
-  try {
-    const dataUrl = await invoke<string>("read_cover", { path: coverPath });
-    coverCache.set(coverPath, dataUrl);
-    return dataUrl;
-  } catch (e) {
-    console.error("Erreur lecture pochette", e);
-    return null;
-  }
+  const pending = pendingCoverLoads.get(coverPath);
+  if (pending) return pending;
+
+  const load = scheduleCoverLoad(async () => {
+    try {
+      const dataUrl = await invoke<string>("read_cover", { path: coverPath });
+      coverCache.set(coverPath, dataUrl);
+      return dataUrl;
+    } catch (e) {
+      console.error("Erreur lecture pochette", e);
+      return null;
+    } finally {
+      pendingCoverLoads.delete(coverPath);
+    }
+  });
+  pendingCoverLoads.set(coverPath, load);
+  return load;
 }
 
 export let isSeeking = false;

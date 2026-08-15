@@ -18,6 +18,11 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Résultat d'un chargement de fichier audio en arrière-plan.
+type LoadResult = Result<StreamingSoundData<FromFileError>, anyhow::Error>;
+/// Handle vers un thread de pré-chargement (non-bloquant).
+type PendingLoadHandle = std::thread::JoinHandle<LoadResult>;
+
 /// Fréquences (Hz) des 10 bandes de l'égaliseur graphique, en octaves ISO
 /// standard (identiques à celles d'un égaliseur graphique classique).
 pub const EQ_BAND_FREQS_HZ: [f64; 10] = [
@@ -33,6 +38,16 @@ struct ActiveSession {
     is_manual_select: bool,
     accumulated_play_secs: f64,
     last_pos: f64,
+}
+
+/// Métadonnées d'un chargement de piste en cours (thread de pré-décodage).
+struct PendingLoad {
+    /// La piste en cours de chargement (pour l'afficher immédiatement dans le snapshot).
+    track: Track,
+    is_manual: bool,
+    /// Position de départ souhaitée (restauration de session, seek avant lecture).
+    start_pos: f64,
+    handle: PendingLoadHandle,
 }
 
 /// Commandes envoyées au thread audio.
@@ -73,7 +88,7 @@ pub type SharedStatus = Arc<Mutex<PlayerState>>;
 
 /// Moteur interne utilisant la crate Kira.
 struct Engine {
-    manager: AudioManager<CpalBackend>,
+    manager: Option<AudioManager<CpalBackend>>,
     sound_handle: Option<StreamingSoundHandle<FromFileError>>,
     queue: Vec<Track>,
     queue_index: i64,
@@ -82,17 +97,22 @@ struct Engine {
     shuffle: bool,
     smart_shuffle_active: bool,
     device_name: Option<String>,
+    pending_position: f64,
 
     active_session: Option<ActiveSession>,
     db: Arc<Mutex<rusqlite::Connection>>,
     // Égaliseur graphique 10 bandes : toutes les pistes sont routées vers
     // cette sous-piste Kira, sur laquelle sont appliqués les 10 filtres EQ
     // (+ le préampli, via le volume de la piste elle-même).
-    eq_track: TrackHandle,
+    eq_track: Option<TrackHandle>,
     eq_bands: Vec<EqFilterHandle>,
     eq_enabled: bool,
     eq_preamp_db: f64,
     eq_gains: Vec<f64>,
+
+    /// Chargement de fichier audio en cours dans un thread dédié.
+    /// Permet de ne pas bloquer le thread audio pendant le décodage initial.
+    pending_load: Option<PendingLoad>,
 }
 
 /// Crée la sous-piste d'égalisation (10 filtres EQ en cascade) sur le
@@ -154,11 +174,11 @@ fn create_audio_manager(device_name: Option<&str>) -> anyhow::Result<AudioManage
         Ok(AudioManager::<CpalBackend>::new(settings)?)
     };
 
-    match build(cpal::BufferSize::Fixed(2048)) {
+    match build(cpal::BufferSize::Fixed(4096)) {
         Ok(manager) => Ok(manager),
         Err(e) => {
             eprintln!(
-                "Rustify: tampon audio fixe (2048) refusé par le pilote ({e}), repli sur la taille par défaut"
+                "Rustify: tampon audio fixe (4096) refusé par le pilote ({e}), repli sur la taille par défaut"
             );
             build(cpal::BufferSize::Default)
         }
@@ -167,10 +187,8 @@ fn create_audio_manager(device_name: Option<&str>) -> anyhow::Result<AudioManage
 
 impl Engine {
     fn new(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Result<Self> {
-        let mut manager = create_audio_manager(None)?;
-        let (eq_track, eq_bands) = build_eq_track(&mut manager)?;
         Ok(Self {
-            manager,
+            manager: None,
             sound_handle: None,
             queue: Vec::new(),
             queue_index: -1,
@@ -179,14 +197,16 @@ impl Engine {
             shuffle: false,
             smart_shuffle_active: false,
             device_name: None,
+            pending_position: 0.0,
 
             active_session: None,
             db,
-            eq_track,
-            eq_bands,
+            eq_track: None,
+            eq_bands: Vec::new(),
             eq_enabled: true,
             eq_preamp_db: 0.0,
             eq_gains: vec![0.0; EQ_BAND_FREQS_HZ.len()],
+            pending_load: None,
         })
     }
 
@@ -203,7 +223,9 @@ impl Engine {
             band.set_gain(gain_db, Tween::default());
         }
         let preamp_db = if self.eq_enabled { self.eq_preamp_db } else { 0.0 };
-        self.eq_track.set_volume(Volume::Decibels(preamp_db), Tween::default());
+        if let Some(eq_track) = &mut self.eq_track {
+            eq_track.set_volume(Volume::Decibels(preamp_db), Tween::default());
+        }
     }
 
     /// Met à jour l'état de l'égaliseur (appelé depuis `PlayerCommand::ApplyEq`).
@@ -214,6 +236,20 @@ impl Engine {
             self.eq_gains = gains;
         }
         self.apply_eq_to_handles();
+    }
+
+    /// Ouvre le périphérique uniquement au premier vrai besoin de lecture.
+    fn ensure_audio_engine(&mut self) -> anyhow::Result<()> {
+        if self.manager.is_some() {
+            return Ok(());
+        }
+        let mut manager = create_audio_manager(self.device_name.as_deref())?;
+        let (eq_track, eq_bands) = build_eq_track(&mut manager)?;
+        self.manager = Some(manager);
+        self.eq_track = Some(eq_track);
+        self.eq_bands = eq_bands;
+        self.apply_eq_to_handles();
+        Ok(())
     }
 
     fn current(&self) -> Option<&Track> {
@@ -256,39 +292,129 @@ impl Engine {
         }
     }
 
+    /// Lance le chargement de la piste courante dans un thread dédié (non-bloquant).
+    /// La lecture démarre réellement dans `poll_pending_load()` une fois le décodage terminé.
     fn load_current(&mut self, is_manual_select: bool) -> anyhow::Result<()> {
         self.finalize_current_session(true, false);
+        let track = self.current().cloned().ok_or_else(|| anyhow::anyhow!("file d'attente vide"))?;
 
-        let track = self
-            .current()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("file d'attente vide"))?;
-
+        // Arrêter la lecture en cours immédiatement
         if let Some(mut old) = self.sound_handle.take() {
             let _ = old.stop(Tween::default());
         }
+        // Annuler un éventuel chargement précédent encore en cours
+        self.pending_load = None;
 
-        let sound_data = StreamingSoundData::from_file(&track.path)?.output_destination(&self.eq_track);
-        let mut handle = self.manager.play(sound_data)?;
-        let _ = handle.set_volume(self.volume as f64, Tween::default());
-        self.sound_handle = Some(handle);
+        // S'assurer que le moteur audio est initialisé (sans décoder le fichier)
+        self.ensure_audio_engine()?;
 
-        self.active_session = Some(ActiveSession {
-            track_id: track.id,
-            is_manual_select,
-            accumulated_play_secs: 0.0,
-            last_pos: 0.0,
+        let path = track.path.clone();
+        let start_pos = self.pending_position;
+
+        // Décodage du fichier dans un thread OS dédié pour ne pas bloquer
+        // le thread audio (et donc le frontend) pendant plusieurs secondes.
+        let handle = std::thread::Builder::new()
+            .name("rustify-file-loader".to_string())
+            .spawn(move || {
+                StreamingSoundData::from_file(&path)
+                    .map_err(|e| anyhow::anyhow!("from_file error: {e}"))
+            })?;
+
+        self.pending_load = Some(PendingLoad {
+            track,
+            is_manual: is_manual_select,
+            start_pos,
+            handle,
         });
-
         Ok(())
     }
 
+    /// Vérifie si un chargement en arrière-plan est terminé, et si oui,
+    /// finalise le `manager.play()` depuis le thread audio.
+    /// Retourne `true` si un chargement vient d'être résolu.
+    fn poll_pending_load(&mut self) -> bool {
+        // Vérifier si le thread de chargement est terminé (non-bloquant)
+        let finished = self
+            .pending_load
+            .as_ref()
+            .map(|p| p.handle.is_finished())
+            .unwrap_or(false);
+
+        if !finished {
+            return false;
+        }
+
+        let pending = match self.pending_load.take() {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let sound_data = match pending.handle.join() {
+            Ok(Ok(data)) => data,
+            Ok(Err(e)) => {
+                eprintln!("Rustify: erreur chargement fichier audio : {e}");
+                return false;
+            }
+            Err(_) => {
+                eprintln!("Rustify: thread de chargement audio a paniqué");
+                return false;
+            }
+        };
+
+        // Associer le flux à la piste EQ et démarrer la lecture
+        let eq_track = match self.eq_track.as_ref() {
+            Some(t) => t,
+            None => {
+                eprintln!("Rustify: piste EQ indisponible au moment du play");
+                return false;
+            }
+        };
+        let sound_data = sound_data.output_destination(eq_track);
+        let manager = match self.manager.as_mut() {
+            Some(m) => m,
+            None => {
+                eprintln!("Rustify: moteur audio indisponible au moment du play");
+                return false;
+            }
+        };
+
+        match manager.play(sound_data) {
+            Ok(mut handle) => {
+                let _ = handle.set_volume(self.volume as f64, Tween::default());
+                if pending.start_pos > 0.0 {
+                    let _ = handle.seek_to(pending.start_pos);
+                }
+                self.sound_handle = Some(handle);
+                self.active_session = Some(ActiveSession {
+                    track_id: pending.track.id,
+                    is_manual_select: pending.is_manual,
+                    accumulated_play_secs: 0.0,
+                    last_pos: pending.start_pos,
+                });
+                true
+            }
+            Err(e) => {
+                eprintln!("Rustify: échec démarrage lecture : {e}");
+                false
+            }
+        }
+    }
     fn set_queue(&mut self, queue: Vec<Track>, start_index: usize, is_manual_select: bool) -> anyhow::Result<()> {
         self.queue = queue;
         self.queue_index = start_index as i64;
+        self.pending_position = 0.0;
         self.load_current(is_manual_select)
     }
 
+    fn restore_queue(&mut self, queue: Vec<Track>, start_index: usize, position_secs: f64) {
+        self.finalize_current_session(true, false);
+        if let Some(mut handle) = self.sound_handle.take() {
+            let _ = handle.stop(Tween::default());
+        }
+        self.queue = queue;
+        self.queue_index = start_index as i64;
+        self.pending_position = position_secs.max(0.0);
+    }
     fn pause(&mut self) {
         if let Some(handle) = &mut self.sound_handle {
             let _ = handle.pause(Tween::default());
@@ -296,11 +422,16 @@ impl Engine {
     }
 
     fn resume(&mut self) {
+        if self.sound_handle.is_none() && self.current().is_some() {
+            let restore_position = self.pending_position;
+            if self.load_current(false).is_ok() {
+                let _ = self.seek(restore_position);
+            }
+        }
         if let Some(handle) = &mut self.sound_handle {
             let _ = handle.resume(Tween::default());
         }
     }
-
     fn stop(&mut self) {
         self.finalize_current_session(true, false);
         if let Some(mut handle) = self.sound_handle.take() {
@@ -324,6 +455,7 @@ impl Engine {
 
     fn seek(&mut self, position_secs: f64) -> anyhow::Result<()> {
         let pos = position_secs.max(0.0);
+        self.pending_position = pos;
         if let Some(handle) = &mut self.sound_handle {
             let _ = handle.seek_to(pos);
         }
@@ -379,76 +511,41 @@ impl Engine {
     }
 
     fn set_audio_device(&mut self, device_name: &str) -> anyhow::Result<()> {
-        let target_name = if device_name.trim().is_empty() || device_name == "default" {
-            None
-        } else {
-            Some(device_name.to_string())
-        };
-
-        if self.device_name == target_name {
+        let target_name = if device_name.trim().is_empty() || device_name == "default" { None } else { Some(device_name.to_string()) };
+        if self.device_name == target_name { return Ok(()); }
+        // Ne démarre pas le flux matériel lors de l'ouverture des paramètres.
+        if self.manager.is_none() {
+            self.device_name = target_name;
             return Ok(());
         }
 
-        let pos = self
-            .sound_handle
-            .as_ref()
-            .map(|h| h.position())
-            .unwrap_or(0.0);
+        let pos = self.sound_handle.as_ref().map(|h| h.position()).unwrap_or(self.pending_position);
         let was_playing = self.is_playing();
         let had_track = self.current().is_some();
         let saved_session = self.active_session.take();
+        if let Some(mut handle) = self.sound_handle.take() { let _ = handle.stop(Tween::default()); }
 
-        if let Some(mut handle) = self.sound_handle.take() {
-            let _ = handle.stop(Tween::default());
-        }
+        let mut manager = create_audio_manager(target_name.as_deref())?;
+        let (eq_track, eq_bands) = build_eq_track(&mut manager)?;
+        self.manager = Some(manager);
+        self.device_name = target_name;
+        self.eq_track = Some(eq_track);
+        self.eq_bands = eq_bands;
+        self.apply_eq_to_handles();
 
-        match create_audio_manager(target_name.as_deref()) {
-            Ok(new_manager) => {
-                self.manager = new_manager;
-                self.device_name = target_name;
-
-                // Kira détruit les sous-pistes existantes avec l'ancien
-                // AudioManager : on recrée la piste EQ puis on réapplique
-                // l'état d'égalisation courant (gains/préampli/activation).
-                match build_eq_track(&mut self.manager) {
-                    Ok((track, bands)) => {
-                        self.eq_track = track;
-                        self.eq_bands = bands;
-                        self.apply_eq_to_handles();
-                    }
-                    Err(e) => {
-                        eprintln!("Rustify: échec reconstruction de la piste EQ après changement de périphérique: {e}");
-                    }
+        if had_track {
+            let is_manual = saved_session.as_ref().map(|s| s.is_manual_select).unwrap_or(false);
+            self.pending_position = pos;
+            if self.load_current(is_manual).is_ok() {
+                let _ = self.seek(pos);
+                if let Some(old_sess) = saved_session {
+                    if let Some(new_sess) = &mut self.active_session { new_sess.accumulated_play_secs = old_sess.accumulated_play_secs; }
                 }
-
-                if had_track {
-                    let is_manual = saved_session.as_ref().map(|s| s.is_manual_select).unwrap_or(false);
-                    if let Ok(()) = self.load_current(is_manual) {
-                        let _ = self.seek(pos);
-                        if let Some(old_sess) = saved_session {
-                            if let Some(new_sess) = &mut self.active_session {
-                                new_sess.accumulated_play_secs = old_sess.accumulated_play_secs;
-                            }
-                        }
-                        if was_playing {
-                            self.resume();
-                        } else {
-                            self.pause();
-                        }
-                    }
-                }
-                Ok(())
+                if was_playing { self.resume(); } else { self.pause(); }
             }
-            Err(e) => Err(e),
         }
+        Ok(())
     }
-
-    /// Réduit la file à la seule piste actuellement en cours de lecture,
-    /// sans toucher au handle audio ni à la position. Après appel,
-    /// `queue.len() == 1` et `queue_index == 0` : à la fin naturelle du
-    /// morceau, `advance_on_finish` ne trouvera plus de "suite séquentielle"
-    /// (has_next = false), ce qui force le passage par l'état "aucune piste
-    /// courante" et laisse la main au Smart Shuffle côté frontend.
     fn trim_queue_to_current(&mut self) {
         if let Some(track) = self.current().cloned() {
             self.queue = vec![track];
@@ -470,11 +567,20 @@ impl Engine {
                 handle.state() == PlaybackState::Playing,
                 handle.position(),
             ),
-            None => (false, 0.0),
+            None => (false, self.pending_position),
+        };
+
+        // Si un chargement est en cours, on expose la piste cible immédiatement
+        // (is_playing = false) pour que le frontend affiche le titre sans attendre
+        // la fin du décodage, et ne confonde pas cet état avec une fin de piste.
+        let current_track = if self.pending_load.is_some() {
+            self.pending_load.as_ref().map(|p| p.track.clone())
+        } else {
+            self.current().cloned()
         };
 
         PlayerState {
-            current_track: self.current().cloned(),
+            current_track,
             is_playing,
             position_secs: pos,
             volume: self.volume,
@@ -532,12 +638,17 @@ pub fn spawn_player_thread(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Resu
                 }
             };
             loop {
-                match rx.recv_timeout(Duration::from_millis(250)) {
+                // Timeout court (50ms) pour réagir rapidement à la fin du
+                // chargement en arrière-plan sans surcharger le CPU.
+                match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(cmd) => {
                         let _ = apply_command(&mut engine, cmd);
                     }
                     Err(RecvTimeoutError::Timeout) => {
-                        if engine.track_just_finished() {
+                        // Vérifier si le chargement du fichier audio est terminé
+                        engine.poll_pending_load();
+                        // Vérifier si la piste en cours vient de se terminer naturellement
+                        if engine.pending_load.is_none() && engine.track_just_finished() {
                             let _ = engine.advance_on_finish();
                         }
                     }
@@ -546,6 +657,8 @@ pub fn spawn_player_thread(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Resu
                         break;
                     }
                 }
+                // Intégrer le chargement qui aurait terminé pendant le traitement d'une commande
+                engine.poll_pending_load();
                 engine.tick_time_accumulation();
                 if let Ok(mut s) = status_for_thread.lock() {
                     *s = engine.snapshot();
@@ -559,11 +672,7 @@ pub fn spawn_player_thread(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Resu
 fn apply_command(engine: &mut Engine, cmd: PlayerCommand) -> anyhow::Result<()> {
     match cmd {
         PlayerCommand::Play(queue, start_index, is_manual) => engine.set_queue(queue, start_index, is_manual)?,
-        PlayerCommand::RestoreTrack(queue, start_index, pos) => {
-            engine.set_queue(queue, start_index, false)?;
-            let _ = engine.seek(pos);
-            engine.pause();
-        }
+        PlayerCommand::RestoreTrack(queue, start_index, pos) => engine.restore_queue(queue, start_index, pos),
         PlayerCommand::Pause => engine.pause(),
         PlayerCommand::Resume => engine.resume(),
         PlayerCommand::Stop => engine.stop(),

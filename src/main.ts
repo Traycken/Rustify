@@ -57,17 +57,18 @@ import {
   startSmartShuffleForPlaylist,
 } from "./player/playerEngine";
 
-import { loadLibrary, renderTracks, renderTracksInContainer, updateMissingMetadataCount, setTracksTabCallbacks, filterBySimilarTrack } from "./tabs/tracksTab";
+import { loadLibrary, renderTracks, renderTracksInContainer, updateMissingMetadataCount, updateRenderedTrack, setTracksTabCallbacks, filterBySimilarTrack } from "./tabs/tracksTab";
 import { loadAlbums, renderAlbumsGrid, filterByAlbum, setAlbumsTabCallbacks } from "./tabs/albumsTab";
 import { loadArtists, renderArtistsGrid, openArtistView, openArtistByName, isArtistGroup, setArtistsTabCallbacks } from "./tabs/artistsTab";
 import { loadGenres, filterByGenre, parseGenres, setGenresTabCallbacks } from "./tabs/genresTab";
 import { loadTempo, filterByTempo, setTempoTabCallbacks } from "./tabs/tempoTab";
+import { loadYears, filterByYear, setYearsTabCallbacks } from "./tabs/yearsTab";
 import { loadMood, setMoodTabCallbacks } from "./tabs/moodTab";
 import { loadPlaylists, setPlaylistsTabCallbacks } from "./tabs/playlistsTab";
 import { loadRadios, playRadio, stopRadio, initRadioEvents, getActiveRadio, getRadioAudioEl, syncRadioAudioDevice, setRadioVolume } from "./tabs/radiosTab";
 import { loadRecents, setRecentsTabCallbacks } from "./tabs/recentsTab";
 import { loadFavorites, setFavoritesTabCallbacks } from "./tabs/favoritesTab";
-import { loadEcstasyTracks, setEcstasyTabCallbacks } from "./tabs/ecstasyTab";
+import { loadEcstasyTracks } from "./tabs/ecstasyTab";
 import { loadQueue, setQueueTabCallbacks } from "./tabs/queueTab";
 import { initDownloaderEvents, setDownloaderCallbacks } from "./tabs/downloaderTab";
 import { loadAppSettings, loadAudioDevices, renderAudioDeviceUI, loadEqState, matchShortcut, currentShortcutPlay, currentShortcutNext, currentShortcutPrev, currentShortcutStop, currentShortcutOverlay, initSettingsEvents, setSettingsTabCallbacks } from "./tabs/settingsTab";
@@ -80,10 +81,12 @@ setNavCallbacks({
   filterByAlbum,
   filterByGenre,
   filterByTempo,
+  filterByYear,
   loadAlbums,
   loadArtists,
   loadGenres,
   loadTempo,
+  loadYears,
   loadMood,
   loadPlaylists,
   loadRecents,
@@ -100,6 +103,15 @@ setNavCallbacks({
   handleSearchInput,
 });
 
+function applyTrackUpdate(updatedTrack: Track) {
+  const track = allTracks.find((item) => item.id === updatedTrack.id || item.path === updatedTrack.path);
+  if (track) Object.assign(track, updatedTrack);
+  const queuedTrack = currentQueue.find((item) => item.id === updatedTrack.id || item.path === updatedTrack.path);
+  if (queuedTrack) Object.assign(queuedTrack, updatedTrack);
+  updateRenderedTrack(updatedTrack);
+  updateMissingMetadataCount();
+}
+
 export function refreshActiveView() {
   const activeNav = document.querySelector(".nav-item.active") as HTMLElement | null;
   const currentView = activeNav?.dataset.view || "tracks";
@@ -109,6 +121,8 @@ export function refreshActiveView() {
     loadFavorites();
   } else if (currentView === "tracks") {
     renderTracks(allTracks);
+  } else if (currentView === "years") {
+    loadYears();
   }
 }
 
@@ -190,7 +204,7 @@ setContextMenuCallbacks({
   deleteArtist: (artist) => handleDeleteArtist(artist),
   deleteAlbum: (album) => handleDeleteAlbum(album),
   deleteGenre: (genreName, count) => handleDeleteGenre(genreName, count),
-  openTrackInfoModal: (track) => openMetadataModal(track, async () => { await loadLibrary(); }),
+  openTrackInfoModal: (track) => openMetadataModal(track, applyTrackUpdate),
   openLyricsModal: (track) => openLyricsPopover(track),
   filterByGenre,
   loadPlaylists,
@@ -245,6 +259,13 @@ setTempoTabCallbacks({
   loadLibrary: async () => { await loadLibrary(); },
 });
 
+setYearsTabCallbacks({
+  switchView,
+  renderTracks,
+  pushNavState,
+  loadLibrary: async () => { await loadLibrary(); },
+});
+
 setMoodTabCallbacks({
   switchView,
   renderTracks,
@@ -272,10 +293,6 @@ setFavoritesTabCallbacks({
   renderArtistsGrid,
   switchView,
   renderTracks,
-});
-
-setEcstasyTabCallbacks({
-  renderTracksInContainer,
 });
 
 setDownloaderCallbacks({
@@ -496,7 +513,7 @@ function bindGlobalEvents() {
   initContextMenuGlobalEvents();
   bindAlgoFeedbackButtons();
 
-  setupMetadataModalEvents(async () => { await loadLibrary(); }, handleDeleteTrack);
+  setupMetadataModalEvents(applyTrackUpdate, handleDeleteTrack);
   setupAlbumModalEvents(fetchOnlineMetadata, async () => { await loadLibrary(); await loadAlbums(); }, handleDeleteAlbum);
   setupArtistModalEvents(loadArtists, handleDeleteArtist);
   setupGenreModalEvents(async () => { await loadLibrary(); loadGenres(); }, (genreName) => handleDeleteGenre(genreName, 0));
@@ -691,6 +708,7 @@ function bindGlobalEvents() {
         if (view === "artists") loadArtists();
         if (view === "genres") loadGenres();
         if (view === "tempo") loadTempo();
+        if (view === "years") loadYears();
         if (view === "mood") loadMood();
         if (view === "playlists") loadPlaylists();
         if (view === "radios") loadRadios();

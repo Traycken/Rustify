@@ -22,20 +22,34 @@ import { isArtistGroup } from "./artistsTab";
 import { escapeHtml } from "../utils/formatting";
 
 export interface FavoritesTabCallbacks {
-  renderTracksInContainer: (tracks: Track[], container: HTMLElement) => void;
-  renderAlbumsGrid: (albums: AlbumSummary[], container: HTMLElement) => Promise<void>;
-  renderArtistsGrid: (artists: ArtistSummary[], container: HTMLElement) => Promise<void>;
+  renderTracksInContainer: (tracks: Track[], container: HTMLElement, isEcstasyView?: boolean) => void;
+  renderAlbumsGrid: (albums: AlbumSummary[], container: HTMLElement) => void;
+  renderArtistsGrid: (artists: ArtistSummary[], container: HTMLElement) => void;
   switchView: (view: string) => void;
   renderTracks: (tracks: Track[], playlistId?: string) => void;
 }
 
 let favoritesCallbacks: Partial<FavoritesTabCallbacks> = {};
-let currentTrackFilter: "stars" | "likes" | "dislikes" = "stars";
+let currentTrackFilter: "stars" | "likes" | "dislikes" | "ecstasy" = "stars";
 let favTracksData: Track[] = [];
 let eventsInitialized = false;
 
 export function setFavoritesTabCallbacks(callbacks: Partial<FavoritesTabCallbacks>) {
   favoritesCallbacks = { ...favoritesCallbacks, ...callbacks };
+}
+
+export function setFavTrackFilter(filter: "stars" | "likes" | "dislikes" | "ecstasy") {
+  setupFavTrackFilterEvents();
+  currentTrackFilter = filter;
+  const btnStars = $("btn-fav-filter-stars");
+  const btnLikes = $("btn-fav-filter-likes");
+  const btnDislikes = $("btn-fav-filter-dislikes");
+  const btnEcstasy = $("btn-fav-filter-ecstasy");
+  if (btnStars) btnStars.className = filter === "stars" ? "btn-primary active-subtab" : "btn-secondary";
+  if (btnLikes) btnLikes.className = filter === "likes" ? "btn-primary active-subtab" : "btn-secondary";
+  if (btnDislikes) btnDislikes.className = filter === "dislikes" ? "btn-primary active-subtab" : "btn-secondary";
+  if (btnEcstasy) btnEcstasy.className = filter === "ecstasy" ? "btn-primary active-subtab" : "btn-secondary";
+  renderTrackSection();
 }
 
 export async function loadFavorites() {
@@ -142,6 +156,9 @@ function renderTrackSection() {
   } else if (currentTrackFilter === "dislikes") {
     tracksToRender = allTracks.filter((t) => (t.dislikes || 0) > 0);
     emptyTracks.textContent = "Aucun titre non aimé 👎 pour le moment.";
+  } else if (currentTrackFilter === "ecstasy") {
+    tracksToRender = allTracks.filter((t) => t.is_ecstasy);
+    emptyTracks.textContent = "Aucun titre marqué en Extase 💖 pour le moment. Utilisez le cœur sur un morceau pour l'ajouter !";
   }
 
   if (tracksToRender.length === 0) {
@@ -149,7 +166,8 @@ function renderTrackSection() {
     emptyTracks.hidden = false;
   } else {
     emptyTracks.hidden = true;
-    favoritesCallbacks.renderTracksInContainer?.(tracksToRender, tracksTbody);
+    const isEcstasyView = currentTrackFilter === "ecstasy";
+    favoritesCallbacks.renderTracksInContainer?.(tracksToRender, tracksTbody, isEcstasyView);
   }
 }
 
@@ -160,17 +178,20 @@ function setupFavTrackFilterEvents() {
   const btnStars = $("btn-fav-filter-stars");
   const btnLikes = $("btn-fav-filter-likes");
   const btnDislikes = $("btn-fav-filter-dislikes");
+  const btnEcstasy = $("btn-fav-filter-ecstasy");
 
-  const updateButtons = (activeFilter: "stars" | "likes" | "dislikes") => {
+  const updateButtons = (activeFilter: "stars" | "likes" | "dislikes" | "ecstasy") => {
     currentTrackFilter = activeFilter;
     if (btnStars) btnStars.className = activeFilter === "stars" ? "btn-primary active-subtab" : "btn-secondary";
     if (btnLikes) btnLikes.className = activeFilter === "likes" ? "btn-primary active-subtab" : "btn-secondary";
     if (btnDislikes) btnDislikes.className = activeFilter === "dislikes" ? "btn-primary active-subtab" : "btn-secondary";
+    if (btnEcstasy) btnEcstasy.className = activeFilter === "ecstasy" ? "btn-primary active-subtab" : "btn-secondary";
     renderTrackSection();
   };
 
   btnStars?.addEventListener("click", () => updateButtons("stars"));
   btnLikes?.addEventListener("click", () => updateButtons("likes"));
   btnDislikes?.addEventListener("click", () => updateButtons("dislikes"));
+  btnEcstasy?.addEventListener("click", () => updateButtons("ecstasy"));
 }
 

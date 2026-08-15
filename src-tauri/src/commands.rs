@@ -18,27 +18,39 @@ fn send(state: &State<AppState>, cmd: PlayerCommand) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn scan_library(state: State<AppState>, path: String) -> Result<ScanReport, String> {
-    let conn = state.db.lock().map_err(map_err)?;
-    scanner::scan_directory(&conn, &path).map_err(map_err)
+pub async fn scan_library(state: State<'_, AppState>, path: String) -> Result<ScanReport, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(map_err)?;
+        scanner::scan_directory(&conn, &path).map_err(map_err)
+    }).await.map_err(map_err)?
 }
 
 #[tauri::command]
-pub fn get_tracks(state: State<AppState>) -> Result<Vec<Track>, String> {
-    let conn = state.db.lock().map_err(map_err)?;
-    db::get_tracks(&conn).map_err(map_err)
+pub async fn get_tracks(state: State<'_, AppState>) -> Result<Vec<Track>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(map_err)?;
+        db::get_tracks(&conn).map_err(map_err)
+    }).await.map_err(map_err)?
 }
 
 #[tauri::command]
-pub fn get_albums(state: State<AppState>) -> Result<Vec<AlbumSummary>, String> {
-    let conn = state.db.lock().map_err(map_err)?;
-    db::get_albums(&conn).map_err(map_err)
+pub async fn get_albums(state: State<'_, AppState>) -> Result<Vec<AlbumSummary>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(map_err)?;
+        db::get_albums(&conn).map_err(map_err)
+    }).await.map_err(map_err)?
 }
 
 #[tauri::command]
-pub fn get_artists(state: State<AppState>) -> Result<Vec<ArtistSummary>, String> {
-    let conn = state.db.lock().map_err(map_err)?;
-    db::get_artists(&conn).map_err(map_err)
+pub async fn get_artists(state: State<'_, AppState>) -> Result<Vec<ArtistSummary>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(map_err)?;
+        db::get_artists(&conn).map_err(map_err)
+    }).await.map_err(map_err)?
 }
 
 #[tauri::command]
@@ -165,30 +177,19 @@ pub fn get_playlist_tracks(state: State<AppState>, playlist_id: String) -> Resul
 }
 
 #[tauri::command]
-pub fn read_cover(path: String) -> Result<String, String> {
-    let target_path = std::path::PathBuf::from(&path);
-    if !target_path.exists() {
-        return Err("Fichier image introuvable".into());
-    }
-
-    let bytes = std::fs::read(&target_path).map_err(map_err)?;
-    let ext = target_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("jpg");
-    let mime = match ext.to_lowercase().as_str() {
-        "png" => "image/png",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        "svg" => "image/svg+xml",
-        _ => "image/jpeg",
-    };
-
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(format!("data:{};base64,{}", mime, b64))
+pub async fn read_cover(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let target_path = std::path::PathBuf::from(&path);
+        if !target_path.exists() { return Err("Fichier image introuvable".into()); }
+        let bytes = std::fs::read(&target_path).map_err(map_err)?;
+        let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+        let mime = match ext.to_lowercase().as_str() {
+            "png" => "image/png", "webp" => "image/webp", "gif" => "image/gif", "svg" => "image/svg+xml", _ => "image/jpeg",
+        };
+        use base64::Engine;
+        Ok(format!("data:{};base64,{}", mime, base64::engine::general_purpose::STANDARD.encode(&bytes)))
+    }).await.map_err(map_err)?
 }
-
 #[tauri::command]
 pub fn save_online_metadata(
     state: State<AppState>,
@@ -201,7 +202,7 @@ pub fn save_online_metadata(
     cover_base64: Option<String>,
     likes: Option<i32>,
     dislikes: Option<i32>,
-) -> Result<(), String> {
+) -> Result<Track, String> {
     let conn = state.db.lock().map_err(map_err)?;
     let mut cover_path = None;
 
@@ -240,7 +241,10 @@ pub fn save_online_metadata(
         likes,
         dislikes,
     )
-    .map_err(map_err)
+    .map_err(map_err)?;
+
+    let mut stmt = conn.prepare("SELECT * FROM tracks WHERE id = ?1 OR path = ?1").map_err(map_err)?;
+    stmt.query_row(rusqlite::params![track_id], db::row_to_track).map_err(map_err)
 }
 
 #[tauri::command]
@@ -362,6 +366,7 @@ pub fn get_app_settings(app: tauri::AppHandle, state: State<AppState>) -> Result
     map.entry("shortcut_next".into()).or_insert_with(|| "MediaTrackNext".into());
     map.entry("shortcut_prev".into()).or_insert_with(|| "MediaTrackPrevious".into());
     map.entry("shortcut_stop".into()).or_insert_with(|| "MediaStop".into());
+    map.entry("discord_rpc_enabled".into()).or_insert_with(|| "true".into());
 
     Ok(map)
 }
@@ -383,10 +388,38 @@ pub fn save_app_setting(app: tauri::AppHandle, state: State<AppState>, key: Stri
         }
     } else if key.starts_with("global_shortcut") || key.starts_with("shortcut_") {
         crate::update_shortcut_registrations(&app);
+    } else if key == "discord_rpc_enabled" {
+        state.discord_rpc.set_enabled(value == "true");
     }
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn update_discord_presence(
+    state: State<AppState>,
+    payload: crate::discord_rpc::DiscordPresencePayload,
+) -> Result<(), String> {
+    state.discord_rpc.update(payload);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_discord_presence(state: State<AppState>) -> Result<(), String> {
+    state.discord_rpc.clear();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_discord_rpc_enabled(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    {
+        let conn = state.db.lock().map_err(map_err)?;
+        db::set_setting(&conn, "discord_rpc_enabled", if enabled { "true" } else { "false" }).map_err(map_err)?;
+    }
+    state.discord_rpc.set_enabled(enabled);
+    Ok(())
+}
+
 
 #[tauri::command]
 pub fn set_autostart_setting(app: tauri::AppHandle, state: State<AppState>, enabled: bool) -> Result<(), String> {

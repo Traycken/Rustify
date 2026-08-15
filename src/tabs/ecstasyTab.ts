@@ -10,33 +10,14 @@
  * ============================================================================
  */
 
-import { $, allTracks } from "../state";
-import type { Track } from "../types";
-
-export interface EcstasyTabCallbacks {
-  renderTracksInContainer: (tracks: Track[], container: HTMLElement, isEcstasyView: boolean) => void;
-}
-
-let ecstasyCallbacks: Partial<EcstasyTabCallbacks> = {};
-
-export function setEcstasyTabCallbacks(callbacks: Partial<EcstasyTabCallbacks>) {
-  ecstasyCallbacks = { ...ecstasyCallbacks, ...callbacks };
-}
+import { loadFavorites, setFavTrackFilter } from "./favoritesTab";
+import { switchView } from "../utils/navigation";
 
 export async function loadEcstasyTracks() {
   try {
-    const ecstasyTracks = allTracks.filter((t) => t.is_ecstasy);
-    const tbody = $("ecstasy-tracks-tbody");
-    const emptyState = $("empty-ecstasy-tracks");
-    if (tbody && emptyState) {
-      if (ecstasyTracks.length === 0) {
-        tbody.innerHTML = "";
-        emptyState.hidden = false;
-      } else {
-        emptyState.hidden = true;
-        ecstasyCallbacks.renderTracksInContainer?.(ecstasyTracks, tbody, true);
-      }
-    }
+    switchView("favorites");
+    setFavTrackFilter("ecstasy");
+    await loadFavorites();
   } catch (err) {
     console.error("Erreur chargement morceaux extase :", err);
   }

@@ -9,6 +9,7 @@ pub struct AppState {
     pub player_tx: Sender<PlayerCommand>,
     pub player_status: SharedStatus,
     pub active_download_pid: Arc<Mutex<Option<u32>>>,
+    pub discord_rpc: crate::discord_rpc::DiscordRpcHandle,
 }
 
 
@@ -17,6 +18,13 @@ impl AppState {
         let conn = db::init_connection()?;
         let db_arc = Arc::new(Mutex::new(conn));
         let (player_tx, player_status) = player::spawn_player_thread(db_arc.clone())?;
+
+        let rpc_enabled = if let Ok(conn) = db_arc.lock() {
+            db::get_setting(&conn, "discord_rpc_enabled", "true") == "true"
+        } else {
+            true
+        };
+        let discord_rpc = crate::discord_rpc::spawn_discord_rpc_thread(rpc_enabled);
 
         // Applique l'égaliseur persistant (profil actif + activation) dès le
         // démarrage, avant toute lecture — source de vérité unique côté Rust,
@@ -38,7 +46,9 @@ impl AppState {
             player_tx,
             player_status,
             active_download_pid: Arc::new(Mutex::new(None)),
+            discord_rpc,
         })
     }
 }
+
 

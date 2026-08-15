@@ -39,9 +39,6 @@
           <button class="nav-item" data-view="favorites">
             <i class="fa-solid fa-star nav-icon" style="color: #f1c40f;"></i> Favoris
           </button>
-          <button class="nav-item" data-view="ecstasy" id="nav-ecstasy">
-            <i class="fa-solid fa-heart nav-icon" style="color: #ff4757;"></i> Extase
-          </button>
           <button class="nav-item" data-view="albums">
             <i class="fa-solid fa-compact-disc nav-icon"></i> Albums
           </button>
@@ -53,6 +50,9 @@
           </button>
           <button class="nav-item" data-view="tempo">
             <i class="fa-solid fa-gauge-high nav-icon"></i> Tempo
+          </button>
+          <button class="nav-item" data-view="years">
+            <i class="fa-solid fa-calendar-days nav-icon"></i> Année
           </button>
           <button class="nav-item" data-view="mood" id="nav-mood">
             <i class="fa-solid fa-face-smile nav-icon"></i> Humeur
@@ -207,6 +207,7 @@
                 <button id="btn-fav-filter-stars" class="btn-primary active-subtab" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-star" style="color: #f1c40f;"></i> ⭐ Favoris</button>
                 <button id="btn-fav-filter-likes" class="btn-secondary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-thumbs-up" style="color: #2ed573;"></i> 👍 Aimés</button>
                 <button id="btn-fav-filter-dislikes" class="btn-secondary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-thumbs-down" style="color: #ff4757;"></i> 👎 Non aimés</button>
+                <button id="btn-fav-filter-ecstasy" class="btn-secondary" style="padding: 6px 14px; font-size: 13px;"><i class="fa-solid fa-heart" style="color: #ff4757;"></i> 💖 Extase</button>
               </div>
             </div>
             <table class="track-table">
@@ -262,32 +263,6 @@
           </div>
         </div>
 
-        <!-- ── 4. Onglet Extase 💖 ─────────────────────────────────────── -->
-        <div id="view-ecstasy" class="view" hidden>
-          <div class="artists-section">
-            <div class="artists-section-header">
-              <h2 class="artists-section-title"><i class="fa-solid fa-heart" style="color: #ff4757;"></i> Titres en Extase 💖 (Favoris+)</h2>
-            </div>
-            <p class="settings-desc" style="margin-bottom: 16px;">
-              Ces musiques sont vos pépites ultimes qui vous font entrer en transe. Jouées avec rareté en lecture aléatoire, elles interviennent comme une bouffée d'oxygène pour relancer l'écoute lors de plusieurs skips d'affilée.
-            </p>
-            <table class="track-table">
-              <thead>
-                <tr>
-                  <th class="col-idx">#</th>
-                  <th class="col-cover">Pochette</th>
-                  <th>Titre</th>
-                  <th>Artiste</th>
-                  <th>Album</th>
-                  <th class="col-time">Durée</th>
-                </tr>
-              </thead>
-              <tbody id="ecstasy-tracks-tbody"></tbody>
-            </table>
-            <p id="empty-ecstasy-tracks" class="empty-state" hidden>Aucun titre marqué en Extase 💖 pour le moment. Utilisez le cœur sur un morceau pour l'ajouter !</p>
-          </div>
-        </div>
-
         <!-- ── 5. Onglet Albums ─────────────────────────────────────────── -->
         <div id="view-albums" class="view grid-view" hidden></div>
 
@@ -332,6 +307,15 @@
             <button id="btn-analyze-all-bpm" class="btn-primary"><i class="fa-solid fa-wave-square"></i> Analyser les BPM manquants</button>
           </div>
           <div id="grid-tempo" class="grid-view"></div>
+        </div>
+
+        <!-- ── 8b. Onglet Année ─────────────────────────────────────────── -->
+        <div id="view-years" class="view" hidden>
+          <div class="recents-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <p class="settings-desc" style="margin-bottom: 0;">Morceaux regroupés par année et par décennie de sortie.</p>
+            <button id="btn-fetch-missing-years" class="btn-primary"><i class="fa-solid fa-cloud-arrow-down"></i> Rechercher les années manquantes</button>
+          </div>
+          <div id="grid-years" class="grid-view"></div>
         </div>
 
         <!-- ── 8b. Onglet Humeur ────────────────────────────────────────── -->
@@ -730,7 +714,25 @@
           </div>
 
           <div class="settings-card" style="margin-top: 18px;">
+            <h3><i class="fa-brands fa-discord"></i> Discord Rich Presence</h3>
+            <p class="settings-desc">
+              Affichez votre morceau en cours, l'artiste et le statut de lecture en direct sur votre profil Discord.
+            </p>
+            <div class="settings-toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Activer Discord Rich Presence</span>
+                <span class="toggle-subtitle">Transmet votre activité audio en direct à votre statut Discord.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-discord-rpc" checked />
+                <span class="slider round"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-top: 18px;">
             <h3><i class="fa-solid fa-keyboard"></i> Raccourcis Clavier Globaux</h3>
+
             <p class="settings-desc">
               Ces raccourcis fonctionnent même lorsque Rustify est réduit ou en arrière-plan.
             </p>
