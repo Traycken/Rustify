@@ -93,15 +93,3 @@ npm run tauri dev
 ```powershell
 npm run tauri build
 ```
-
----
-
-## 🔧 Correctifs majeurs & Choix techniques
-
-### 1. Gestion Thread-safe du moteur audio (`cpal::Stream` non-Send)
-- **Problème** : `rodio::OutputStream` utilise `cpal::platform::Stream` qui est `!Send`. Le placer directement dans `Mutex<Player>` bloquait la compilation Tauri (`E0277`).
-- **Solution** : Le moteur audio est exécuté dans son propre thread dédié créé via `player::spawn_player_thread()`. Les commandes frontend communiquent via `Sender<PlayerCommand>` et lisent un état partagé `Arc<Mutex<PlayerState>>`.
-
-### 2. Isolation du watcher Vite (`EBUSY` sur Windows)
-- **Problème** : Chokidar (Vite) bloquait les DLLs verrouillées par Cargo dans `src-tauri/target/`.
-- **Solution** : Ajout de `server.watch.ignored: ['**/src-tauri/**']` dans `vite.config.ts`.
