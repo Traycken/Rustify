@@ -9,14 +9,14 @@
 <div align="center">
 
 ### Interface principale
-![Rustify - Interface Principale](./Screenshot_3.png)
+![Rustify - Interface Principale](./Screenshot_1.png)
 
 <br/>
 
-### Détails & Éléments d'interface
-| Lecteur / Vinyle | Pochettes & Vues |
+### Overlay Déplaçable
+|  |  |
 | :---: | :---: |
-| ![Aperçu Lecteur](./Screenshot_1.png) | ![Aperçu Vues](./Screenshot_2.png) |
+| ![Aperçu Lecteur](./Screenshot_3.png) | ![Aperçu Vues](./Screenshot_2.png) |
 
 </div>
 
@@ -93,29 +93,6 @@ npm run tauri dev
 ```powershell
 npm run tauri build
 ```
-
----
-
-## 📝 Liste des fonctionnalités (Backlog)
-
-### Phase 1 — MVP & Améliorations (Implémenté)
-- [x] Scan et import récursif de la bibliothèque musicale.
-- [x] Extraction des tags audio (`lofty`).
-- [x] Base de données locale SQLite (`rusqlite` WAL mode).
-- [x] Moteur audio Rust via thread dédié (`rodio`).
-- [x] Extraction et affichage des pochettes d'albums (`read_cover`).
-- [x] Système de favoris (Pistes, Albums, Artistes).
-- [x] Statistiques d'écoute avancées & Historique.
-- [x] Prévention multi-instances (*Single Instance*).
-- [x] Sélection dynamique des périphériques audio.
-
-### Phase 2 — Évolutions futures
-- [ ] Auto-enchaînement via callbacks `sink` au lieu du polling.
-- [ ] Synchronization bidirectionnelle du scan (détection/purge des fichiers supprimés avec confirmation).
-- [ ] Surveillance multi-dossiers incrémentale (`mtime`).
-- [ ] Reconstitution / Réordonnancement par Drag & Drop des playlists et de la queue.
-- [ ] Raccourcis clavier globaux (Media Keys de l'OS).
-- [ ] Égaliseur logiciel / Normalisation du volume (ReplayGain).
 
 ---
 
